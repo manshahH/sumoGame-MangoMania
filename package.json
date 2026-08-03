@@ -1,0 +1,19 @@
+{
+  "name": "sumo-time",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SUMO TIME - a pixel-art 1v1 sumo arcade game. Desktop is the ring, phones are the controllers.",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node shared/selftests-node.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  }
+}

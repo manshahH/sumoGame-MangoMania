@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+
+# Raw itch.io export bundle and scratch — the curated assets/ folder is what ships
+assets_sumo_time/
+assets_sumo_time.zip
+__MACOSX/
+vegetable &fruit（.png
