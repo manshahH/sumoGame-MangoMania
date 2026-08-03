@@ -1,0 +1,217 @@
+body.desktop {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 4px solid var(--edge);
+  background: var(--panel);
+  flex: none;
+}
+
+#brand {
+  font-size: 20px;
+  color: var(--p1);
+  letter-spacing: 0.06em;
+}
+
+#brandsub {
+  font-size: 9px;
+  margin-top: 4px;
+}
+
+.statuschip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 3px solid var(--edge);
+  background: var(--panel-hi);
+  font-size: 9px;
+}
+
+.screenview {
+  flex: 1;
+  min-height: 0;
+  padding: 22px;
+  overflow: auto;
+}
+
+/* --------------------------------------------------------------- lobby --- */
+.lobbygrid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.panel-title {
+  font-size: 10px;
+  padding: 10px 14px;
+  border-bottom: 4px solid var(--edge);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-title span {
+  white-space: nowrap;
+}
+
+.panel-title span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-title span:last-child {
+  font-size: 8px;
+  flex: none;
+}
+
+.panel-body {
+  padding: 16px;
+}
+
+.qrbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  padding: 10px;
+  margin: 10px 0;
+  width: 220px;
+  height: 220px;
+}
+
+.qrbox svg {
+  width: 100%;
+  height: 100%;
+}
+
+.digits {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  color: var(--p1);
+}
+
+.joinurl {
+  font-size: 11px;
+  word-break: break-all;
+  color: var(--p2);
+}
+
+.seatcards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.seatcard {
+  padding: 16px;
+  text-align: center;
+}
+
+.seatcard h3 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.seatcard .owner {
+  margin-top: 10px;
+  font-size: 10px;
+}
+
+.seatcard.claimed {
+  border-color: var(--good);
+}
+
+.seatcard.botted {
+  opacity: 0.75;
+}
+
+.tierrow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.startrow {
+  margin-top: 16px;
+  align-items: center;
+}
+
+.bigbtn {
+  font-size: 14px;
+  min-height: 64px;
+  padding: 14px 26px;
+}
+
+.hint {
+  font-size: 10px;
+  line-height: 1.8;
+  opacity: 0.75;
+  margin: 8px 0 0;
+}
+
+/* --------------------------------------------------------------- fight --- */
+#screen-fight {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.canvaswrap {
+  position: relative;
+  width: 100%;
+  max-width: 1280px;
+  aspect-ratio: 960 / 540;
+}
+
+#fightcanvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: block;
+  border: 4px solid var(--edge);
+}
+
+.fightchrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.devopenrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.debugpane {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 300px;
+  z-index: 80;
+  font-size: 10px;
+}
+
+.debugpane pre {
+  white-space: pre-wrap;
+  font-size: 9px;
+  max-height: 220px;
+  overflow: auto;
+}

@@ -1,0 +1,272 @@
+body.phone {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  touch-action: manipulation;
+  user-select: none;
+  overflow: hidden;
+}
+
+#phonetop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 4px solid var(--edge);
+  background: var(--panel);
+  flex: none;
+}
+
+#p-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.pscreen {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+/* ------------------------------------------------------ lobby seats ---- */
+.seatrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+.seatrow.mine {
+  border-color: var(--good);
+}
+
+.seatrow .sinfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.seatrow h3 {
+  font-size: 14px;
+}
+
+.seatrow .sblurb {
+  font-size: 9px;
+  line-height: 1.6;
+  margin-top: 6px;
+  opacity: 0.75;
+}
+
+.seatrow .pixelbtn {
+  min-width: 110px;
+  flex: none;
+}
+
+/* -------------------------------------------------------------- fight -- */
+#p-screen-play {
+  padding: 8px;
+  gap: 8px;
+}
+
+.fighthud {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.hudrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hudrow .label {
+  width: 74px;
+  flex: none;
+}
+
+.hudnum {
+  font-size: 10px;
+  width: 34px;
+  flex: none;
+  text-align: right;
+}
+
+.combochip {
+  font-size: 10px;
+  padding: 3px 8px;
+  background: var(--panel-hi);
+  border: 2px solid var(--edge);
+  flex: none;
+}
+
+.combochip.on {
+  background: var(--good);
+  color: #0c1a0e;
+}
+
+.parrylight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.padwrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.joyzone {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  background: rgba(0, 0, 0, 0.2);
+  border: 4px solid var(--edge);
+}
+
+.joyhint {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.joybase {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #3a2350, #150b21);
+  border: 4px solid var(--edge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.joyknob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--p1);
+  border: 3px solid var(--edge);
+  box-shadow: 0 0 12px rgba(255, 206, 84, 0.7);
+  transition: transform 0.03s linear;
+}
+
+.btnzone {
+  flex: 1;
+  position: relative;
+  touch-action: none;
+}
+
+.arcadebtn {
+  position: absolute;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 20px;
+  color: #0c0714;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 4px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.05s linear, box-shadow 0.05s linear;
+}
+
+.arcadebtn .btnsub {
+  font-size: 8px;
+}
+
+.arcadebtn.abtn {
+  top: 4%;
+  right: 6%;
+  background: radial-gradient(circle at 35% 30%, #ff8a8a, #d43a3a);
+}
+
+.arcadebtn.bbtn {
+  bottom: 4%;
+  left: 6%;
+  background: radial-gradient(circle at 35% 30%, #8ad4ff, #2e8fd4);
+}
+
+.arcadebtn.held,
+.arcadebtn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--shadow);
+  filter: brightness(1.15);
+}
+
+/* -------------------------------------------------------------- idle ---- */
+.idlecard {
+  padding: 20px;
+  text-align: center;
+}
+
+.overlaymsg {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(12, 7, 20, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.matchflash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(12, 7, 20, 0.85);
+  pointer-events: none;
+}
+
+.matchflash .big {
+  font-size: 26px;
+  text-align: center;
+  animation: flashpop 0.4s ease-out;
+}
+
+@keyframes flashpop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 700px) {
+  .pscreen {
+    max-width: 640px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}

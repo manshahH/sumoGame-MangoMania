@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SUMO TIME — RING</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/client/shared/pixel.css" />
+    <link rel="stylesheet" href="/client/desktop/desktop.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23140b1a'/%3E%3Ccircle cx='16' cy='16' r='10' fill='%23ffce54'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body class="desktop">
+    <header id="topbar">
+      <div class="row" style="gap: 14px">
+        <div>
+          <h1 id="brand">SUMO TIME</h1>
+          <div class="label dim" id="brandsub">PIXEL SUMO ARCADE · MANGO MANIA</div>
+        </div>
+      </div>
+      <div class="row" style="gap: 8px">
+        <div class="statuschip"><span class="led" id="netled"></span><span id="nettext">LINKING</span></div>
+        <button class="pixelbtn" id="btn-sound">SND ON</button>
+        <button class="pixelbtn hidden" id="btn-lobby">◄ LOBBY</button>
+        <button class="pixelbtn" id="btn-debug">DBG</button>
+      </div>
+    </header>
+
+    <!-- ============================= LOBBY ============================ -->
+    <main id="screen-lobby" class="screenview">
+      <div class="lobbygrid">
+        <section class="pixelpanel joinpanel">
+          <div class="panel-title"><span>JOIN THE RING</span><span class="dim" id="lan-note"></span></div>
+          <div class="panel-body">
+            <div class="label">ROOM CODE</div>
+            <div id="roomcode" class="digits">----</div>
+            <div id="qrbox" class="qrbox"></div>
+            <div class="label" style="margin-top: 10px">SCAN, OR OPEN ON YOUR PHONE</div>
+            <div id="joinurl" class="joinurl">connecting…</div>
+            <p class="hint">
+              Phones must be on the same WiFi. Claim P1 or P2 from a phone - whichever seat nobody
+              claims is fought by the bot.
+            </p>
+          </div>
+        </section>
+
+        <section class="seatsarea">
+          <div class="seatcards" id="seatcards"></div>
+
+          <div class="pixelpanel" style="margin-bottom: 14px">
+            <div class="panel-title"><span>BOT DIFFICULTY</span></div>
+            <div class="panel-body">
+              <div class="tierrow" id="tierrow"></div>
+              <p class="hint" id="tierhint"></p>
+            </div>
+          </div>
+
+          <div class="pixelpanel" style="margin-bottom: 14px">
+            <div class="panel-title"><span>SOLO / DEV — OPEN A CONTROLLER ON THIS COMPUTER</span></div>
+            <div class="panel-body">
+              <div class="devopenrow" id="devopen"></div>
+              <p class="hint">Opens a phone controller in a new tab, for testing without a second device.</p>
+            </div>
+          </div>
+
+          <div class="row spread startrow">
+            <div class="label dim" id="champbanner"></div>
+            <button class="pixelbtn on bigbtn" id="btn-start">▶ START THE MATCH</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ============================= FIGHT ============================= -->
+    <main id="screen-fight" class="screenview hidden">
+      <div class="canvaswrap">
+        <canvas id="fightcanvas"></canvas>
+      </div>
+    </main>
+
+    <!-- ============================ DEBUG ============================= -->
+    <aside id="debug" class="debugpane pixelpanel hidden">
+      <div class="panel-title"><span>DEBUG</span><span class="dim">D toggles</span></div>
+      <div class="panel-body">
+        <pre id="debugtext"></pre>
+        <button class="pixelbtn" id="btn-tolobby">BACK TO LOBBY</button>
+      </div>
+    </aside>
+
+    <div id="toasts" class="toast-wrap"></div>
+
+    <script type="module" src="/client/desktop/main.js"></script>
+  </body>
+</html>

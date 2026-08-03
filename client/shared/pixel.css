@@ -1,0 +1,248 @@
+/* SUMO TIME - shared pixel-arcade skin. Desktop and phone both pull from this
+   file so the cabinet reads as one machine. Chunky pixel font, thick borders,
+   no smoothing anywhere - the retro look stays crisp at any scale. */
+
+:root {
+  --bg: #140b1a;
+  --panel: #231533;
+  --panel-hi: #33204a;
+  --ink: #ffe9c7;
+  --p1: #ffce54;
+  --p2: #5cc8ff;
+  --warn: #ff5c5c;
+  --good: #7dff8a;
+  --edge: #0c0714;
+  --shadow: #0c0714;
+
+  --tap: 64px; /* minimum touch target */
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100%;
+  background-image: radial-gradient(ellipse at 50% 30%, rgba(255, 206, 84, 0.08), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 4px);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: 'Press Start 2P', monospace;
+}
+
+.label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #c9b8d6;
+}
+
+.dim {
+  opacity: 0.6;
+}
+
+.p1text {
+  color: var(--p1);
+}
+.p2text {
+  color: var(--p2);
+}
+.warntext {
+  color: var(--warn);
+}
+.goodtext {
+  color: var(--good);
+}
+
+/* Chunky pixel panel: solid fill, hard 4px border, drop shadow offset like a
+   sprite box - no blur, no gradients softer than a hard stop. */
+.pixelpanel {
+  background: var(--panel);
+  border: 4px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  border-radius: 0;
+}
+
+.pixelbtn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  min-height: var(--tap);
+  padding: 10px 16px;
+  color: var(--ink);
+  background: var(--panel-hi);
+  border: 4px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.05s linear, box-shadow 0.05s linear;
+}
+
+.pixelbtn:active,
+.pixelbtn.held {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+.pixelbtn.on {
+  background: var(--good);
+  color: #0c1a0e;
+}
+
+.pixelbtn.danger {
+  background: #4a1220;
+  color: var(--warn);
+}
+
+.pixelbtn:disabled,
+.pixelbtn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pixelinput {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--ink);
+  background: #0c0714;
+  border: 4px solid var(--edge);
+  padding: 12px;
+  width: 100%;
+  text-transform: uppercase;
+}
+
+.pixelinput:focus {
+  outline: none;
+  border-color: var(--p1);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spread {
+  justify-content: space-between;
+}
+
+.center {
+  align-items: center;
+  justify-content: center;
+}
+
+/* meter bar: pixel-chunky, ticked */
+.pixelbar {
+  position: relative;
+  height: 18px;
+  background: #0c0714;
+  border: 3px solid var(--edge);
+  overflow: hidden;
+}
+
+.pixelbar > .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--p1);
+}
+
+.pixelbar.p2 > .fill {
+  background: var(--p2);
+}
+
+.pixelbar.combobar > .fill {
+  background: var(--good);
+}
+
+.pixelbar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, rgba(0, 0, 0, 0.35) 9px 10px);
+  pointer-events: none;
+}
+
+.led {
+  width: 12px;
+  height: 12px;
+  background: #201430;
+  border: 2px solid var(--edge);
+  flex: none;
+}
+
+.led.on {
+  background: var(--good);
+  box-shadow: 0 0 8px rgba(125, 255, 138, 0.8);
+}
+
+.led.warn {
+  background: var(--warn);
+  box-shadow: 0 0 8px rgba(255, 92, 92, 0.8);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.toast-wrap {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toast {
+  border: 3px solid var(--edge);
+  background: var(--panel-hi);
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 10px;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
