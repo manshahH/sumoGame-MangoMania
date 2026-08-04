@@ -183,21 +183,37 @@ function applyHud(hud) {
 
   const hint = $('#hud-pushhint')
   const lighter = hud.oppWeight < hud.weight - 4
-  hint.textContent = hud.oppNearEdge
-    ? 'THEY ARE ON THE EDGE — PUSH WITH B!'
-    : lighter
-      ? 'THEY ARE LIGHT — PUSH WITH B!'
-      : 'SOFTEN THEM UP WITH A'
-  hint.classList.toggle('go', hud.oppNearEdge || lighter)
+  if (hud.phase === 'countdown') {
+    // The countdown is reported in this line rather than as an overlay, so the
+    // pad stays visible and thumbs can already be in position.
+    const n = Math.max(0, Math.ceil(hud.countdown))
+    hint.textContent = n > 0 ? `ROUND ${hud.round} — GET READY… ${n}` : `ROUND ${hud.round} — GO!`
+    hint.classList.add('go')
+  } else {
+    hint.textContent = hud.oppNearEdge
+      ? 'THEY ARE ON THE EDGE — PUSH WITH B!'
+      : lighter
+        ? 'THEY ARE LIGHT — PUSH WITH B!'
+        : 'SOFTEN THEM UP WITH A'
+    hint.classList.toggle('go', hud.oppNearEdge || lighter)
+  }
 
   $('#hud-clock').textContent =
     hud.phase === 'fighting' ? fmtClock(hud.timeLeft) : hud.phase === 'countdown' ? fmtClock(hud.countdown) : '—'
 
   // Phase transitions drive the full-screen flash and the haptics.
+  //
+  // Nothing covers the pad at the start of a round. The desktop is already
+  // showing the countdown and the SUMO! banner, and repeating it here hid the
+  // controls at the one moment the player needs them - you tap READY and the
+  // next thing you should see is your controller. The start cue is a buzz
+  // instead, which tells you "go" without taking the screen.
+  // Belt and braces: whatever is on screen, the pad is never covered once a
+  // round is counting down or live.
+  if (hud.phase === 'countdown' || hud.phase === 'fighting') clearFlash()
+
   if (hud.phase !== state.phase || hud.round !== state.lastRound) {
-    if (hud.phase === 'countdown') flash(`ROUND ${hud.round}`)
-    else if (hud.phase === 'fighting' && state.phase === 'countdown') {
-      flash('SUMO!')
+    if (hud.phase === 'fighting' && state.phase === 'countdown') {
       buzz(30)
     } else if (hud.phase === 'roundEnd') {
       flash(hud.wonRound ? `ROUND ${hud.round}\nWON` : `ROUND ${hud.round}\nLOST`)
@@ -216,6 +232,11 @@ function buzz(pattern) {
 }
 
 let flashTimer = null
+function clearFlash() {
+  clearTimeout(flashTimer)
+  $('#p-matchflash').classList.add('hidden')
+}
+
 function flash(text) {
   const el = $('#p-matchflash')
   const txt = $('#p-matchflash-text')
