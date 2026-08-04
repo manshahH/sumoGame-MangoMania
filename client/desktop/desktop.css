@@ -167,8 +167,59 @@ body.desktop {
 }
 
 .champline {
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.lbrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  padding: 7px 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.lbrow.top {
+  background: rgba(255, 206, 84, 0.16);
+  color: var(--p1);
+}
+
+.lbrank {
+  width: 18px;
+  flex: none;
+  opacity: 0.6;
+}
+
+.lbname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lbmango {
+  flex: none;
+}
+
+.lbhits {
+  flex: none;
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.recordhead {
+  font-size: 28px;
+  color: var(--p1);
+}
+
+.recordstats {
+  font-size: 18px;
+}
+
+#record-name {
+  max-width: 340px;
 }
 
 .startbtn {

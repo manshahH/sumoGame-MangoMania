@@ -11,11 +11,10 @@ import {
   pushResistance,
   bodyRadiusFromWeight,
   knockbackDistance,
-  ringRadiusAt,
 } from './config.js'
 import { hashSeed } from './rng.js'
 
-export { speedFromWeight, pushResistance, knockbackDistance, ringRadiusAt, bodyRadiusFromWeight }
+export { speedFromWeight, pushResistance, knockbackDistance, bodyRadiusFromWeight }
 
 function otherSeat(seat) {
   return seat === 'p1' ? 'p2' : 'p1'
@@ -56,7 +55,7 @@ function createFighter(id, x, y) {
   }
 }
 
-const SPAWN_OFFSET = CONFIG.ring.baseRadius * 0.42
+const SPAWN_OFFSET = CONFIG.ring.radius * 0.42
 
 export function createMatchState(opts = {}) {
   const seed = opts.seed ?? `sumo-${Date.now()}`
@@ -76,7 +75,13 @@ export function createMatchState(opts = {}) {
     rounds: { p1: 0, p2: 0 }, // rounds won, best of CONFIG.match.maxRounds
     roundWinner: null,
     roundReason: null,
-    ring: { cx: CONFIG.ring.cx, cy: CONFIG.ring.cy, radius: CONFIG.ring.baseRadius },
+    ring: { cx: CONFIG.ring.cx, cy: CONFIG.ring.cy, radius: CONFIG.ring.radius },
+    // Match totals, accumulated across every round - deliberately NOT cleared
+    // by resetRound, because the leaderboard ranks a whole match.
+    stats: {
+      p1: { mangoes: 0, hits: 0, pushes: 0, parries: 0 },
+      p2: { mangoes: 0, hits: 0, pushes: 0, parries: 0 },
+    },
     winner: null, // match winner
     endReason: null, // 'ringout' | 'timeout'
     events: [],
@@ -93,7 +98,7 @@ export function resetRound(state) {
   state.fighters.p2 = createFighter('p2', CONFIG.ring.cx + SPAWN_OFFSET, CONFIG.ring.cy)
   state.timeSec = 0
   state.countdown = CONFIG.match.countdownSeconds
-  state.ring.radius = CONFIG.ring.baseRadius
+  state.ring.radius = CONFIG.ring.radius
   state.roundWinner = null
   state.roundReason = null
   state.phase = 'countdown'
@@ -132,6 +137,9 @@ function grantMango(state, seat, reason) {
   const before = f.weight
   f.weight = clampWeight(f.weight + CONFIG.parry.mangoWeight)
   f.mangoFlash = 0.9
+  // Counted even when the weight cap swallows the gain: the mango was earned,
+  // and the leaderboard ranks mangoes earned rather than weight kept.
+  state.stats[seat].mangoes += 1
   state.events.push({ type: 'mango', seat, amount: f.weight - before, reason })
 }
 
@@ -171,6 +179,7 @@ function resolveAttack(state, attackerSeat, kind) {
     attacker.combo.count = 0
     attacker.combo.timer = 0
     defender.parry = { phase: 'recover', t: 0 }
+    state.stats[defenderSeat].parries += 1
     grantMango(state, defenderSeat, 'parry')
     state.events.push({ type: 'parry', seat: defenderSeat, punished: attackerSeat, cornered })
     return
@@ -191,11 +200,14 @@ function resolveAttack(state, attackerSeat, kind) {
   defender.anim = 'hurt'
 
   if (kind === 'hit') {
+    state.stats[attackerSeat].hits += 1
     attacker.combo.count += 1
     attacker.combo.timer = CONFIG.combo.windowMs / 1000
     if (attacker.combo.count % CONFIG.combo.milestone === 0) {
       grantMango(state, attackerSeat, 'combo')
     }
+  } else {
+    state.stats[attackerSeat].pushes += 1
   }
 
   state.events.push({ type: kind, seat: attackerSeat, target: defenderSeat, chip: kind === 'hit' ? cfg.chip : 0, knockback: knock })
@@ -337,10 +349,34 @@ function resolveBodyCollision(state) {
   p2.y += uy * push2
 }
 
+/**
+ * Who takes a round that ran out of clock.
+ *
+ * Heavier wins, then bigger, then the better fight: more mangoes earned, then
+ * more hits landed, and only then position on the clay.
+ *
+ * Note that size is a pure function of weight in this game (that is the whole
+ * point of weight - it is health, mass and sprite size at once), so the size
+ * check can never actually separate two fighters the weight check tied. It is
+ * kept because it states the intent, and because it would start doing real
+ * work the moment size gains a second input. Mangoes are the first comparison
+ * that can genuinely break a weight tie.
+ */
 export function timeoutWinner(state) {
   const p1 = state.fighters.p1
   const p2 = state.fighters.p2
+  const s1 = state.stats?.p1 || { mangoes: 0, hits: 0 }
+  const s2 = state.stats?.p2 || { mangoes: 0, hits: 0 }
+
   if (p1.weight !== p2.weight) return p1.weight > p2.weight ? 'p1' : 'p2'
+
+  const size1 = bodyRadiusFromWeight(p1.weight)
+  const size2 = bodyRadiusFromWeight(p2.weight)
+  if (size1 !== size2) return size1 > size2 ? 'p1' : 'p2'
+
+  if (s1.mangoes !== s2.mangoes) return s1.mangoes > s2.mangoes ? 'p1' : 'p2'
+  if (s1.hits !== s2.hits) return s1.hits > s2.hits ? 'p1' : 'p2'
+
   const d1 = Math.hypot(p1.x - state.ring.cx, p1.y - state.ring.cy)
   const d2 = Math.hypot(p2.x - state.ring.cx, p2.y - state.ring.cy)
   if (d1 !== d2) return d1 < d2 ? 'p1' : 'p2'
@@ -428,7 +464,6 @@ export function stepMatch(state, dtRaw) {
 
   // phase === 'fighting'
   state.timeSec += dt
-  state.ring.radius = ringRadiusAt(state.timeSec)
 
   for (const seat of SEATS) {
     tickCombo(state.fighters[seat], dt)

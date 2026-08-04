@@ -223,6 +223,11 @@ body.phone {
   color: #0c1a0e;
 }
 
+.combochip.mango {
+  border-color: var(--p1);
+  color: var(--p1);
+}
+
 .parrylight {
   display: flex;
   align-items: center;

@@ -2,9 +2,28 @@
 // the browser (?test) and in node (`npm test`). No DOM, no sockets, no timers.
 
 import { CONFIG, SEATS, speedFromWeight, pushResistance, knockbackDistance, weightBarFractions } from './config.js'
-import { createMatchState, stepMatch, setInput, isOutsideRing, clampWeight, timeoutWinner, drainEvents } from './sim.js'
+import {
+  createMatchState,
+  stepMatch,
+  setInput,
+  isOutsideRing,
+  clampWeight,
+  timeoutWinner,
+  drainEvents,
+  resetRound,
+  bodyRadiusFromWeight,
+} from './sim.js'
 import { createBotMemory, stepBot } from './bots.js'
 import { makeRng } from './rng.js'
+import {
+  createLeaderboard,
+  addEntry,
+  qualifies,
+  isNewRecord,
+  compareEntries,
+  normalize as normalizeBoard,
+  LEADERBOARD_SIZE,
+} from './leaderboard.js'
 import { createEngine } from './engine.js'
 import { createStreak, recordWin } from './streak.js'
 import { createLobby, addPlayer, claimStation, resolveStations, clearSeat } from './roles.js'
@@ -279,7 +298,7 @@ function testRounds(t) {
   t.ok('round 2 is queued', state.round === 2)
   t.ok('the next round starts on a countdown', state.phase === 'countdown')
   t.ok('weight is restored for the new round', state.fighters.p2.weight === CONFIG.weight.start)
-  t.ok('the ring is back to full size', state.ring.radius === CONFIG.ring.baseRadius)
+  t.ok('the ring is its fixed size', state.ring.radius === CONFIG.ring.radius)
   t.ok('the round tally survives the reset', state.rounds.p1 === 1)
 
   run(state, CONFIG.match.countdownSeconds + 0.05)
@@ -307,7 +326,9 @@ function testBotsActuallyFight(t) {
   const mem = { p1: createBotMemory(), p2: createBotMemory() }
   const rng = makeRng('bot-fight:rng')
   const counts = {}
-  const steps = Math.round(CONFIG.match.roundSeconds / DT)
+  // A hair past the round clock, so a round that goes the full distance and
+  // ends on the timeout still counts as resolved rather than as a stall.
+  const steps = Math.round((CONFIG.match.roundSeconds + 0.5) / DT)
   for (let i = 0; i < steps; i++) {
     for (const seat of SEATS) {
       setInput(state, seat, stepBot(seat, state, mem[seat], rng, 'ozeki'))
@@ -474,6 +495,149 @@ function testWeightBar(t) {
   t.ok('above the cap clamps to full', weightBarFractions(9999).over === 1)
 }
 
+/** The ring is a fixed size for the whole round - the shrink is gone. */
+function testRingIsFixed(t) {
+  t.ok('there is no shrink config left', CONFIG.ring.shrinkStartSec === undefined)
+  const state = freshFightingState('fixed-ring')
+  const r0 = state.ring.radius
+  t.ok('the ring starts at its configured radius', r0 === CONFIG.ring.radius)
+  setInput(state, 'p1', neutralInput())
+  setInput(state, 'p2', neutralInput())
+  run(state, CONFIG.match.roundSeconds - 1)
+  t.ok('the ring is the same size late in the round', state.ring.radius === r0)
+}
+
+/**
+ * Match totals feed the leaderboard, so they must survive a round reset - a
+ * mango earned in round 1 still counts when the match is scored.
+ */
+function testMatchStats(t) {
+  const state = freshFightingState('stats')
+  place(state, 'p1', -27, 0)
+  place(state, 'p2', 27, 0)
+  setInput(state, 'p2', neutralInput())
+  setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
+  run(state, (CONFIG.parry.graceMs + CONFIG.hit.cooldownMs) / 1000 + 0.05)
+  t.ok('a landed hit is counted', state.stats.p1.hits === 1)
+  t.ok('the defender is credited with nothing', state.stats.p2.hits === 0)
+
+  state.stats.p1.mangoes = 3
+  const carriedHits = state.stats.p1.hits
+  resetRound(state)
+  t.ok('mangoes survive a round reset', state.stats.p1.mangoes === 3)
+  t.ok('hits survive a round reset', state.stats.p1.hits === carriedHits)
+
+  // A parry mango is counted even when the weight cap swallows the gain.
+  const capped = freshFightingState('stats-cap')
+  capped.fighters.p2.weight = CONFIG.weight.cap
+  place(capped, 'p1', -20, 0)
+  place(capped, 'p2', 20, 0)
+  setInput(capped, 'p2', { move: { x: 0, y: 0 }, a: true, b: true })
+  stepMatch(capped, DT)
+  setInput(capped, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
+  run(capped, 0.3)
+  t.ok('a mango earned at the weight cap still counts', capped.stats.p2.mangoes >= 1)
+  t.ok('the parry is counted', capped.stats.p2.parries >= 1)
+}
+
+/** Weight, then size, then the better fight. */
+function testTiebreak(t) {
+  const mk = (w1, w2, s1, s2, x1 = 5, x2 = 5) => {
+    const state = createMatchState({ seed: 'tb' })
+    state.fighters.p1.weight = w1
+    state.fighters.p2.weight = w2
+    place(state, 'p1', x1, 0)
+    place(state, 'p2', x2, 0)
+    Object.assign(state.stats.p1, s1)
+    Object.assign(state.stats.p2, s2)
+    return state
+  }
+
+  t.ok('heavier wins', timeoutWinner(mk(120, 90, {}, {})) === 'p1')
+  t.ok('heavier wins the other way too', timeoutWinner(mk(90, 120, {}, {})) === 'p2')
+
+  // Equal weight means equal size (size is derived from weight), so the first
+  // check that can actually separate them is mangoes.
+  t.ok(
+    'equal weight means equal size',
+    bodyRadiusFromWeight(100) === bodyRadiusFromWeight(100)
+  )
+  t.ok('equal weight falls through to mangoes', timeoutWinner(mk(100, 100, { mangoes: 3 }, { mangoes: 1 })) === 'p1')
+  t.ok('more mangoes wins either side', timeoutWinner(mk(100, 100, { mangoes: 0 }, { mangoes: 2 })) === 'p2')
+  t.ok(
+    'equal mangoes falls through to hits',
+    timeoutWinner(mk(100, 100, { mangoes: 2, hits: 9 }, { mangoes: 2, hits: 4 })) === 'p1'
+  )
+  t.ok(
+    'equal everything falls through to distance from centre',
+    timeoutWinner(mk(100, 100, { mangoes: 1, hits: 1 }, { mangoes: 1, hits: 1 }, 5, 60)) === 'p1'
+  )
+}
+
+/** The leaderboard ranks a whole match by mangoes, then by hits. */
+function testLeaderboard(t) {
+  const at = (n) => ({ at: n })
+  let board = createLeaderboard()
+  t.ok('a fresh board is empty', board.entries.length === 0)
+  t.ok('a zero-mango run does not qualify', !qualifies(board, { name: 'X', mangoes: 0, hits: 20, ...at(1) }))
+
+  board = addEntry(board, { name: 'ALICE', mangoes: 5, hits: 10, ...at(1) })
+  board = addEntry(board, { name: 'BOB', mangoes: 8, hits: 2, ...at(2) })
+  t.ok('more mangoes outranks more hits', board.entries[0].name === 'BOB')
+
+  board = addEntry(board, { name: 'CAI', mangoes: 8, hits: 30, ...at(3) })
+  t.ok('a mango tie breaks on hits', board.entries[0].name === 'CAI')
+  t.ok('the loser of the tie stays second', board.entries[1].name === 'BOB')
+
+  t.ok('beating the top score is a new record', isNewRecord(board, { name: 'D', mangoes: 9, hits: 0, ...at(4) }))
+  t.ok('matching the top score on mangoes but not hits is not a record', !isNewRecord(board, { name: 'D', mangoes: 8, hits: 1, ...at(4) }))
+
+  // The board is capped, and the weakest run falls off the bottom.
+  for (let i = 0; i < LEADERBOARD_SIZE + 3; i++) {
+    board = addEntry(board, { name: `N${i}`, mangoes: 20 + i, hits: 0, at: 10 + i })
+  }
+  t.ok(`the board is capped at ${LEADERBOARD_SIZE}`, board.entries.length === LEADERBOARD_SIZE)
+  t.ok('the board stays sorted', board.entries.every((e, i, a) => i === 0 || compareEntries(a[i - 1], e) <= 0))
+  t.ok('a weak run no longer qualifies against a full board', !qualifies(board, { name: 'Z', mangoes: 1, hits: 1, ...at(99) }))
+
+  // Storage can hand back junk; normalize must not throw or leak it through.
+  const cleaned = normalizeBoard({ entries: [{ name: 'OK', mangoes: 3, hits: 2 }, null, { nope: true }, { name: 'X', mangoes: 'x' }] })
+  t.ok('normalize drops malformed entries', cleaned.entries.length === 1 && cleaned.entries[0].name === 'OK')
+  t.ok('normalize survives a missing blob', normalizeBoard(undefined).entries.length === 0)
+}
+
+/**
+ * Bot decision timers are scheduled against state.timeSec, which resets every
+ * round. Carrying a stale schedule across the reset left bots standing idle
+ * for most of rounds 2 and 3.
+ */
+function testBotsEngageEveryRound(t) {
+  let worst = 0
+  let roundsSeen = 0
+  for (let s = 0; s < 8; s++) {
+    const engine = createEngine({ seed: `engage-${s}`, seats: { p1: 'bot', p2: 'bot' } })
+    const firstBlow = {}
+    for (let i = 0; i < 40000; i++) {
+      for (const e of engine.tick(DT)) {
+        if ((e.type === 'hit' || e.type === 'push') && firstBlow[engine.state.round] === undefined) {
+          firstBlow[engine.state.round] = engine.state.timeSec
+        }
+      }
+      if (engine.state.phase === 'matchEnd') break
+    }
+    for (const r of Object.keys(firstBlow)) {
+      roundsSeen++
+      worst = Math.max(worst, firstBlow[r])
+    }
+  }
+  t.ok('bot rounds were actually played', roundsSeen >= 8)
+  t.ok(
+    `bots engage early in EVERY round (worst first blow ${worst.toFixed(1)}s)`,
+    worst < 6,
+    `worst=${worst}`
+  )
+}
+
 /** Nobody fights until every human seat has read the rules and tapped READY. */
 function testReadyGate(t) {
   const engine = createEngine({ seed: 'ready', seats: { p1: 'human', p2: 'human' }, phase: 'ready' })
@@ -509,7 +673,12 @@ export function runSelfTests() {
     ['combo counter + milestone mango + parry breaks combo', testCombo],
     ['round end: ring-out winner + timeout tiebreak', testMatchEnd],
     ['best-of-3 rounds: tally, reset, match end', testRounds],
+    ['the ring is a fixed size (no shrink)', testRingIsFixed],
+    ['match stats survive round resets', testMatchStats],
+    ['tiebreak: weight -> size -> mangoes -> hits -> centre', testTiebreak],
+    ['mango leaderboard ranking', testLeaderboard],
     ['bots actually land hits and pushes', testBotsActuallyFight],
+    ['bots engage early in every round', testBotsEngageEveryRound],
     ['bots never walk themselves out of the ring', testBotsStayInTheRing],
     ['bot tiers are a real skill ladder', testBotTierGap],
     ['weight bar reads full at the starting weight', testWeightBar],

@@ -48,10 +48,25 @@ export function createEngine(opts = {}) {
     }
   }
 
+  // Bot memory schedules decisions against state.timeSec, which resets to zero
+  // at the start of every round. Carrying a stale schedule across that reset
+  // leaves a bot waiting for a clock reading that will not come round again
+  // until the round is nearly over - it stands there doing nothing for twenty
+  // seconds. Wiping the memory on a round change is what keeps rounds 2 and 3
+  // as lively as round 1.
+  let lastRound = state.round
+  function resetBotsOnNewRound() {
+    if (state.round === lastRound) return
+    lastRound = state.round
+    botMem.p1 = createBotMemory()
+    botMem.p2 = createBotMemory()
+  }
+
   function tick(dt) {
     // The ready gate lives here rather than in the sim so the sim stays a pure
     // function of inputs and time.
     if (state.phase === 'ready' && allReady()) beginCountdown(state)
+    resetBotsOnNewRound()
     runBots()
     stepMatch(state, dt)
     return drainEvents(state)

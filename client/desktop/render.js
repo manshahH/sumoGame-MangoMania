@@ -191,18 +191,16 @@ export function createRenderer(canvas, assets) {
   }
 
   /**
-   * The dohyo, drawn from the live ring radius. The clay block underneath is
-   * fixed; the sand and the rope shrink with the sim, so "the ring is closing"
-   * is something you can see rather than something you have to be told.
+   * The dohyo, drawn from the live ring radius so the boundary on screen is
+   * exactly where a ring-out triggers.
    */
   function drawDohyo(state) {
-    const base = CONFIG.ring.baseRadius
     const r = state.ring.radius
     const cx = PROJ.cx
     const cy = PROJ.cy
 
     // clay block: a fixed slab with a visible side face
-    const blockR = base * 1.24
+    const blockR = r * 1.24
     const blockH = 44
     ctx.save()
     ellipse(cx, cy + blockH, blockR, '#8a4a24')
@@ -212,10 +210,7 @@ export function createRenderer(canvas, assets) {
     ellipse(cx, cy, blockR * 0.97, '#b25a28')
     ctx.restore()
 
-    // shrunk-away sand, so the ring that has been lost reads as scuffed clay
-    ellipse(cx, cy, base, '#a8551f')
-
-    // live sand
+    // sand
     ellipse(cx, cy, r, CONFIG.colors.ringSand)
     ellipse(cx, cy, r * 0.985, '#e2b070')
 
@@ -244,14 +239,6 @@ export function createRenderer(canvas, assets) {
     ctx.fillRect(cx - 34, cy - lh / 2, lw, lh)
     ctx.fillRect(cx + 28, cy - lh / 2, lw, lh)
     ctx.restore()
-
-    // when the ring is closing, ring it in red so the pressure is legible
-    if (r < base - 1) {
-      ctx.save()
-      ctx.globalAlpha = 0.35 + Math.sin(crowdWave * 6) * 0.15
-      ellipse(cx, cy, r, null, CONFIG.colors.warn, 2)
-      ctx.restore()
-    }
   }
 
   function drawShadow(x, y, radius) {
@@ -422,11 +409,14 @@ export function createRenderer(canvas, assets) {
     const urgent = secs <= 10 && state.phase === 'fighting'
     ctx.fillStyle = urgent ? CONFIG.colors.warn : CONFIG.colors.ink
     ctx.fillText(String(Math.ceil(secs)).padStart(2, '0'), CANVAS_W / 2, 32)
-    if (state.ring.radius < CONFIG.ring.baseRadius - 1) {
-      ctx.font = PIX(8)
-      ctx.fillStyle = CONFIG.colors.warn
-      ctx.fillText('RING CLOSING', CANVAS_W / 2, 72)
-    }
+    // Mangoes are the leaderboard currency, so both tallies stay on screen.
+    ctx.font = PIX(8)
+    ctx.fillStyle = '#c9b8d6'
+    ctx.fillText(
+      `MANGOES  ${state.stats.p1.mangoes}  -  ${state.stats.p2.mangoes}`,
+      CANVAS_W / 2,
+      72
+    )
     ctx.restore()
   }
 

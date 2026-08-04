@@ -74,22 +74,22 @@ export const CONFIG = {
   },
 
   // ---- ring ---------------------------------------------------------------
-  // A round is short, so the shrink has to bite early. The sand the fighters
-  // stand on IS this circle - the renderer draws the dohyo from these numbers
-  // rather than from a fixed-size background image, so the shrink is visible.
+  // A fixed dohyo. The sand the fighters stand on IS this circle - the renderer
+  // draws the ring from this number rather than from a fixed-size background
+  // image, so the boundary on screen is exactly where a ring-out triggers.
+  // Rounds are kept short by the round clock, not by closing the ring in.
   ring: {
     cx: 0,
     cy: 0,
-    baseRadius: 210,
-    shrinkStartSec: 10,
-    shrinkEndSec: 26,
-    shrinkToFraction: 0.55, // ring radius at shrinkEndSec and after
+    radius: 210,
   },
 
   // ---- match flow -----------------------------------------------------------
   match: {
     countdownSeconds: 3,
-    roundSeconds: 30, // per-round hard cap; the shrinking ring usually ends it first
+    // Per-round hard cap. With no shrinking ring to force the issue this is the
+    // only thing keeping a round short, so it is deliberately tight.
+    roundSeconds: 25,
     roundsToWin: 2, // best of 3
     maxRounds: 3,
     roundEndHoldSeconds: 2.4, // "P1 TAKES ROUND 1" card between rounds
@@ -123,23 +123,23 @@ export const CONFIG = {
       ozeki: {
         label: 'OZEKI',
         blurb: 'Solid. Softens you up, then takes the push when it is there.',
-        reactionMs: 280,
-        hesitateChance: 0.12,
-        parryChance: 0.22,
-        pushChance: 0.5,
-        aimJitter: 0.14,
-        edgeSeekBias: 0.55,
+        reactionMs: 320,
+        hesitateChance: 0.17,
+        parryChance: 0.17,
+        pushChance: 0.44,
+        aimJitter: 0.16,
+        edgeSeekBias: 0.5,
         edgeAwareness: 0.92,
       },
       yokozuna: {
         label: 'YOKOZUNA',
         blurb: 'Fast, reads your pushes, and walks you onto the edge on purpose.',
-        reactionMs: 140,
+        reactionMs: 115,
         hesitateChance: 0,
-        parryChance: 0.46,
-        pushChance: 0.72,
-        aimJitter: 0.04,
-        edgeSeekBias: 0.82,
+        parryChance: 0.52,
+        pushChance: 0.8,
+        aimJitter: 0.03,
+        edgeSeekBias: 0.9,
         edgeAwareness: 1,
       },
     },
@@ -224,14 +224,6 @@ export function bodyRadiusFromWeight(weight) {
 export function knockbackDistance(baseImpulse, attackerWeight, defenderWeight) {
   const ratio = Math.pow(attackerWeight / pushResistance(defenderWeight), CONFIG.knockback.weightExponent)
   return Math.min(baseImpulse * ratio, CONFIG.knockback.maxDistance)
-}
-
-export function ringRadiusAt(timeSec) {
-  const r = CONFIG.ring
-  if (timeSec <= r.shrinkStartSec) return r.baseRadius
-  if (timeSec >= r.shrinkEndSec) return r.baseRadius * r.shrinkToFraction
-  const t = (timeSec - r.shrinkStartSec) / (r.shrinkEndSec - r.shrinkStartSec)
-  return r.baseRadius * (1 - t * (1 - r.shrinkToFraction))
 }
 
 export function clamp(v, lo, hi) {

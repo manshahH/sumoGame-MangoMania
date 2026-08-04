@@ -83,6 +83,20 @@
           </div>
         </div>
       </div>
+
+      <!-- new leaderboard entry: asks for a name before the score is saved -->
+      <div id="recordcard" class="resultcard hidden">
+        <div class="pixelpanel resultinner">
+          <div class="recordhead" id="record-head">NEW RECORD!</div>
+          <div class="recordstats" id="record-stats"></div>
+          <label class="label dim" for="record-name">ENTER YOUR NAME FOR THE LEADERBOARD</label>
+          <input id="record-name" class="pixelinput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          <div class="resultbtns">
+            <button class="pixelbtn on bigbtn" id="btn-record-save">SAVE TO LEADERBOARD</button>
+            <button class="pixelbtn bigbtn" id="btn-record-skip">SKIP</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <aside id="debug" class="debugpane pixelpanel hidden">

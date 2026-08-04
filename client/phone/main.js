@@ -167,6 +167,8 @@ function applyHud(hud) {
   $('#hud-weightnum').textContent = Math.round(hud.weight)
   $('#hud-combo').textContent = `COMBO ${hud.combo || 0}`
   $('#hud-combo').classList.toggle('on', (hud.combo || 0) >= 2)
+  // Mangoes are what the leaderboard ranks, so the count is always on screen.
+  $('#hud-mangoes').textContent = `🥭 ${hud.mangoes || 0}`
 
   // The opponent's weight is the only thing that tells you when a push will
   // actually throw them, so it earns a place on the controller.

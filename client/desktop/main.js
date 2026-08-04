@@ -5,6 +5,14 @@
 import { CONFIG, SEATS, SEAT_LABELS } from '/shared/config.js'
 import { createEngine } from '/shared/engine.js'
 import { createStreak, recordWin } from '/shared/streak.js'
+import {
+  createLeaderboard,
+  normalize as normalizeBoard,
+  qualifies,
+  isNewRecord,
+  addEntry,
+  LEADERBOARD_SIZE,
+} from '/shared/leaderboard.js'
 import { createHostNet } from './net.js'
 import { createAudio } from './audio.js'
 import { loadAssets } from './sprites.js'
@@ -22,6 +30,22 @@ const app = {
   sound: true,
   botTier: localStorage.getItem(TIER_KEY) || CONFIG.bots.defaultTier,
   streak: loadStreak(),
+  board: loadBoard(),
+}
+
+const BOARD_KEY = 'sumotime.leaderboard.v1'
+
+function loadBoard() {
+  try {
+    const raw = localStorage.getItem(BOARD_KEY)
+    if (raw) return normalizeBoard(JSON.parse(raw))
+  } catch {
+    /* ignore corrupt storage */
+  }
+  return createLeaderboard()
+}
+function saveBoard() {
+  localStorage.setItem(BOARD_KEY, JSON.stringify(app.board))
 }
 
 function loadStreak() {
@@ -74,16 +98,28 @@ function renderLobby(lobby) {
   renderChampion()
 }
 
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+}
+
 function renderChampion() {
   const body = $('#champbody')
   if (!body) return
+  const rows = app.board.entries
+    .map(
+      (e, i) => `
+      <div class="lbrow ${i === 0 ? 'top' : ''}">
+        <span class="lbrank">${i + 1}</span>
+        <span class="lbname">${esc(e.name)}</span>
+        <span class="lbmango">🥭 ${e.mangoes}</span>
+        <span class="lbhits">${e.hits} HITS</span>
+      </div>`
+    )
+    .join('')
+  const empty = `<div class="champline dim">NO SCORES YET — MOST MANGOES IN A MATCH TAKES THE TOP SPOT</div>`
   const s = app.streak
-  body.innerHTML = s.streak > 0
-    ? `<div class="champline p1text">CHAMPION · ${s.championName}</div>
-       <div class="champline">CURRENT STREAK · ${s.streak}</div>
-       <div class="champline dim">SESSION BEST · ${s.best} (${s.bestName || '—'})</div>`
-    : `<div class="champline dim">NO CHAMPION YET — WIN A MATCH TO TAKE THE RING</div>
-       <div class="champline dim">SESSION BEST · ${s.best || 0}${s.bestName ? ` (${s.bestName})` : ''}</div>`
+  const champ = s.streak > 0 ? `<div class="champline p1text">RING HELD BY ${esc(s.championName)} · ${s.streak} IN A ROW</div>` : ''
+  body.innerHTML = (rows || empty) + champ
 }
 
 function renderRoom(res) {
@@ -188,6 +224,8 @@ function buildHud(state) {
       rounds: state.rounds,
       roundsToWin: CONFIG.match.roundsToWin,
       weight: f.weight,
+      mangoes: state.stats[seat].mangoes,
+      oppMangoes: state.stats[seat === 'p1' ? 'p2' : 'p1'].mangoes,
       combo: f.combo.count,
       parryReady: !f.parry && f.parryCooldown <= 0,
       parrying: !!f.parry,
@@ -257,13 +295,67 @@ function settleMatch(state) {
   $('#result-title').textContent = `${winner.name} WINS`
   $('#result-title').className = `resulttitle ${winnerSeat}text`
   $('#result-score').textContent = `${state.rounds[winnerSeat]} — ${state.rounds[loserSeat]}`
-  $('#result-streak').textContent =
-    winner.kind === 'human' ? `STREAK ${app.streak.streak} · SESSION BEST ${app.streak.best}` : 'THE BOT HOLDS THE RING'
+  $('#result-streak').innerHTML = SEATS.map((seat) => {
+    const st = state.stats[seat]
+    return `<span class="${seat}text">${esc(ring.identity[seat].name)}</span> 🥭 ${st.mangoes} · ${st.hits} HITS`
+  }).join('&nbsp;&nbsp;|&nbsp;&nbsp;')
   $('#result-next').textContent = queued
     ? 'CHALLENGER SEAT OPEN — NEXT PLAYER, CLAIM IT ON YOUR PHONE'
     : 'PLAY AGAIN KEEPS THE SAME SEATS'
   $('#resultcard').classList.remove('hidden')
   renderChampion()
+
+  offerLeaderboardEntry(state)
+}
+
+/**
+ * Every human's match haul is a leaderboard candidate. A run good enough to
+ * make the board asks for a name before it is saved - the board is the prize
+ * hook at an event, so nobody lands on it as an anonymous "P1".
+ */
+function offerLeaderboardEntry(state) {
+  const candidates = SEATS.filter((seat) => ring.identity[seat].kind === 'human')
+    .map((seat) => ({
+      seat,
+      name: ring.identity[seat].name,
+      mangoes: state.stats[seat].mangoes,
+      hits: state.stats[seat].hits,
+      rounds: state.rounds[seat],
+      won: state.winner === seat,
+      at: Date.now(),
+    }))
+    .filter((entry) => qualifies(app.board, entry))
+    .sort((a, b) => b.mangoes - a.mangoes || b.hits - a.hits)
+
+  ring.pendingEntries = candidates
+  promptNextEntry()
+}
+
+function promptNextEntry() {
+  const entry = ring.pendingEntries?.shift()
+  if (!entry) {
+    $('#recordcard').classList.add('hidden')
+    return
+  }
+  ring.currentEntry = entry
+  $('#record-head').textContent = isNewRecord(app.board, entry) ? 'NEW RECORD!' : 'YOU MADE THE BOARD!'
+  $('#record-stats').innerHTML = `🥭 <b>${entry.mangoes}</b> MANGOES · ${entry.hits} HITS`
+  const input = $('#record-name')
+  input.value = entry.name
+  $('#recordcard').classList.remove('hidden')
+  input.focus()
+  input.select()
+}
+
+function saveRecord() {
+  const entry = ring.currentEntry
+  if (!entry) return
+  const typed = $('#record-name').value.trim().toUpperCase().slice(0, 12)
+  app.board = addEntry(app.board, { ...entry, name: typed || entry.name || 'ANON' })
+  saveBoard()
+  renderChampion()
+  ring.currentEntry = null
+  promptNextEntry()
 }
 
 function loop(now) {
@@ -320,6 +412,9 @@ function backToLobby() {
   ring.engine = null
   audio.stopLoop()
   $('#resultcard').classList.add('hidden')
+  $('#recordcard').classList.add('hidden')
+  ring.pendingEntries = []
+  ring.currentEntry = null
   net.toLobby()
   showScreen('lobby')
   renderChampion()
@@ -334,8 +429,19 @@ function wireChrome() {
   })
   $('#btn-debug').addEventListener('click', toggleDebug)
   $('#btn-lobby').addEventListener('click', backToLobby)
+  $('#btn-record-save').addEventListener('click', saveRecord)
+  $('#btn-record-skip').addEventListener('click', () => {
+    ring.currentEntry = null
+    promptNextEntry()
+  })
+  $('#record-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveRecord()
+  })
   $('#btn-result-lobby').addEventListener('click', backToLobby)
   $('#btn-again').addEventListener('click', () => {
+    $('#recordcard').classList.add('hidden')
+    ring.pendingEntries = []
+    ring.currentEntry = null
     net.start()
     beginMatch()
   })
