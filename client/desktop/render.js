@@ -4,7 +4,7 @@
 // boundary always matches where a ring-out actually happens and the shrink is
 // visible as the sand closing in.
 
-import { CONFIG, SEATS, bodyRadiusFromWeight } from '/shared/config.js'
+import { CONFIG, SEATS, bodyRadiusFromWeight, weightBarFractions } from '/shared/config.js'
 import { Animator, drawFrame } from './sprites.js'
 
 export const CANVAS_W = 960
@@ -380,14 +380,26 @@ export function createRenderer(canvas, assets) {
       ctx.fillRect(px, y + 28, 11, 11)
     }
 
+    // Full at the starting weight; mango overfill rides on top in gold so
+    // being over 100 reads as a bonus rather than as a bar that never fills.
     const barX = x + 12
     const barY = y + 46
     const barW = w - 24
-    const pct = Math.max(0, Math.min(1, (f.weight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)))
+    const { base, over } = weightBarFractions(f.weight)
     ctx.fillStyle = '#0c0714'
     ctx.fillRect(barX, barY, barW, 10)
     ctx.fillStyle = color
-    ctx.fillRect(barX, barY, barW * pct, 10)
+    ctx.fillRect(barX, barY, barW * base, 10)
+    if (over > 0) {
+      ctx.fillStyle = '#fff3c4'
+      ctx.fillRect(barX, barY, barW * over, 10)
+    }
+
+    ctx.textAlign = side === 'left' ? 'right' : 'left'
+    ctx.font = PIX(10)
+    ctx.fillStyle = over > 0 ? '#fff3c4' : '#c9b8d6'
+    ctx.fillText(String(Math.round(f.weight)), side === 'left' ? x + w - 2 : x + 2, y + 30)
+    ctx.textAlign = side === 'left' ? 'left' : 'right'
 
     if (f.combo.count >= 2) {
       ctx.textAlign = side === 'left' ? 'left' : 'right'

@@ -176,6 +176,16 @@ h3 {
   background: var(--p1);
 }
 
+/* Mango overfill: weight earned above the starting weight, riding on top of an
+   already-full bar so being heavy reads as a bonus rather than as a bar that
+   never quite fills. */
+.pixelbar > .over {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: #fff3c4;
+}
+
 .pixelbar.p2 > .fill {
   background: var(--p2);
 }

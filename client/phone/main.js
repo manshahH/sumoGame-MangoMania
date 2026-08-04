@@ -2,7 +2,7 @@
 // drive the fight controls. The phone never renders the match - only its own
 // small HUD slice, which keeps it immune to render and network jitter.
 
-import { SEATS, SEAT_LABELS, CONFIG } from '/shared/config.js'
+import { SEATS, SEAT_LABELS, CONFIG, weightBarFractions } from '/shared/config.js'
 import { createPhoneNet } from './net.js'
 import { mountController } from './controller.js'
 
@@ -126,6 +126,12 @@ function fmtClock(sec) {
   return `0:${String(s).padStart(2, '0')}`
 }
 
+function setBar(bar, weight) {
+  const { base, over } = weightBarFractions(weight)
+  bar.querySelector('.fill').style.width = `${base * 100}%`
+  bar.querySelector('.over').style.width = `${over * 100}%`
+}
+
 /** The host drives every phone screen change through the HUD phase. */
 function applyHud(hud) {
   if (!hud) return
@@ -155,18 +161,16 @@ function applyHud(hud) {
   }
   ;[...pips.children].forEach((el, i) => el.classList.toggle('won', i < won))
 
-  const pct = ((hud.weight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)) * 100
   const bar = $('#hud-weightbar')
   bar.classList.toggle('p2', state.seat === 'p2')
-  bar.querySelector('.fill').style.width = `${Math.max(0, Math.min(100, pct))}%`
+  setBar(bar, hud.weight)
   $('#hud-weightnum').textContent = Math.round(hud.weight)
   $('#hud-combo').textContent = `COMBO ${hud.combo || 0}`
   $('#hud-combo').classList.toggle('on', (hud.combo || 0) >= 2)
 
   // The opponent's weight is the only thing that tells you when a push will
   // actually throw them, so it earns a place on the controller.
-  const oppPct = ((hud.oppWeight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)) * 100
-  $('#hud-oppbar').querySelector('.fill').style.width = `${Math.max(0, Math.min(100, oppPct))}%`
+  setBar($('#hud-oppbar'), hud.oppWeight)
   $('#hud-oppnum').textContent = Math.round(hud.oppWeight)
   $('#hud-opplabel').textContent = (hud.opponent || 'VS').slice(0, 8)
 

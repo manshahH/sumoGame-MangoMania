@@ -100,6 +100,7 @@ function renderTiers() {
   row.innerHTML = Object.entries(CONFIG.bots.tiers)
     .map(([key, t]) => `<button class="pixelbtn ${key === app.botTier ? 'on' : ''}" data-tier="${key}">${t.label}</button>`)
     .join('')
+  $('#tierhint').textContent = CONFIG.bots.tiers[app.botTier]?.blurb || ''
   row.querySelectorAll('[data-tier]').forEach((btn) =>
     btn.addEventListener('click', () => {
       app.botTier = btn.dataset.tier

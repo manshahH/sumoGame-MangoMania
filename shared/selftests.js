@@ -1,7 +1,7 @@
 // runSelfTests(): pure, deterministic checks over the sim. Runs identically in
 // the browser (?test) and in node (`npm test`). No DOM, no sockets, no timers.
 
-import { CONFIG, SEATS, speedFromWeight, pushResistance, knockbackDistance } from './config.js'
+import { CONFIG, SEATS, speedFromWeight, pushResistance, knockbackDistance, weightBarFractions } from './config.js'
 import { createMatchState, stepMatch, setInput, isOutsideRing, clampWeight, timeoutWinner, drainEvents } from './sim.js'
 import { createBotMemory, stepBot } from './bots.js'
 import { makeRng } from './rng.js'
@@ -367,6 +367,113 @@ function testBotVsBot(t) {
   }
 }
 
+/**
+ * Bots must not walk themselves off the dohyo. Before the ring guard existed,
+ * 60% of all ring-outs were a bot strolling out unprompted, which read as the
+ * bot wandering off on its own rather than losing a fight.
+ */
+function testBotsStayInTheRing(t) {
+  let selfOut = 0
+  let forcedOut = 0
+  for (const tier of ['rookie', 'ozeki', 'yokozuna']) {
+    for (let s = 0; s < 12; s++) {
+      const engine = createEngine({ seed: `guard-${tier}-${s}`, seats: { p1: 'bot', p2: 'bot' }, botTiers: { p1: tier, p2: tier } })
+      const lastKnock = { p1: -99, p2: -99 }
+      for (let i = 0; i < 20000; i++) {
+        const events = engine.tick(DT)
+        const now = engine.state.timeSec
+        for (const e of events) {
+          if (e.type === 'hit' || e.type === 'push') lastKnock[e.target] = now
+          else if (e.type === 'parry') lastKnock[e.punished] = now
+          else if (e.type === 'roundEnd' && e.reason === 'ringout') {
+            // No blow landed on the loser recently => they walked out alone.
+            if (now - lastKnock[e.loser] > 0.6) selfOut++
+            else forcedOut++
+            lastKnock.p1 = -99
+            lastKnock.p2 = -99
+          }
+        }
+        if (engine.state.phase === 'matchEnd') break
+      }
+    }
+  }
+  const total = selfOut + forcedOut
+  t.ok('bot matches produced ring-outs at all', total > 0)
+  t.ok(
+    `bots do not walk themselves out (${selfOut} self / ${total} total)`,
+    selfOut === 0,
+    `selfOut=${selfOut} forcedOut=${forcedOut}`
+  )
+}
+
+/** The three tiers have to be genuinely different opponents, not one bot at three speeds. */
+function testBotTierGap(t) {
+  const playMatch = (t1, t2, seed) => {
+    const engine = createEngine({ seed, seats: { p1: 'bot', p2: 'bot' }, botTiers: { p1: t1, p2: t2 } })
+    for (let i = 0; i < 20000; i++) {
+      engine.tick(DT)
+      if (engine.state.phase === 'matchEnd') return engine.state.winner
+    }
+    return null
+  }
+  // Seats alternate so neither tier gets a positional advantage.
+  const winRate = (strong, weak, n = 40) => {
+    let wins = 0
+    for (let s = 0; s < n; s++) {
+      if (s % 2 === 0) {
+        if (playMatch(strong, weak, `gap-${strong}-${weak}-${s}`) === 'p1') wins++
+      } else if (playMatch(weak, strong, `gap-${strong}-${weak}-${s}`) === 'p2') wins++
+    }
+    return wins / n
+  }
+
+  const yokoVsRookie = winRate('yokozuna', 'rookie')
+  const ozekiVsRookie = winRate('ozeki', 'rookie')
+  const yokoVsOzeki = winRate('yokozuna', 'ozeki')
+  t.ok(`YOKOZUNA beats ROOKIE decisively (${(yokoVsRookie * 100).toFixed(0)}%)`, yokoVsRookie >= 0.8)
+  t.ok(`OZEKI beats ROOKIE (${(ozekiVsRookie * 100).toFixed(0)}%)`, ozekiVsRookie >= 0.7)
+  t.ok(`YOKOZUNA edges OZEKI (${(yokoVsOzeki * 100).toFixed(0)}%)`, yokoVsOzeki >= 0.6)
+  t.ok('the ladder is strictly ordered', yokoVsRookie >= ozekiVsRookie)
+
+  // Every tier trait should actually differ across the three, or the tiers are
+  // cosmetic. Reaction time and aim also have to improve monotonically.
+  const tiers = ['rookie', 'ozeki', 'yokozuna'].map((k) => CONFIG.bots.tiers[k])
+  for (const trait of ['reactionMs', 'hesitateChance', 'parryChance', 'pushChance', 'aimJitter', 'edgeSeekBias', 'edgeAwareness']) {
+    const values = tiers.map((x) => x[trait])
+    t.ok(`tiers differ on ${trait}`, new Set(values).size === tiers.length, JSON.stringify(values))
+  }
+  t.ok('reaction time improves with tier', tiers[0].reactionMs > tiers[1].reactionMs && tiers[1].reactionMs > tiers[2].reactionMs)
+  t.ok('footwork improves with tier', tiers[0].aimJitter > tiers[1].aimJitter && tiers[1].aimJitter > tiers[2].aimJitter)
+  t.ok('self-preservation improves with tier', tiers[0].edgeAwareness < tiers[1].edgeAwareness && tiers[1].edgeAwareness <= tiers[2].edgeAwareness)
+}
+
+/** A fighter on the starting weight must look FULL, not two-thirds empty. */
+function testWeightBar(t) {
+  const atStart = weightBarFractions(CONFIG.weight.start)
+  t.ok('the bar is full at the starting weight', atStart.base === 1, JSON.stringify(atStart))
+  t.ok('no overfill at the starting weight', atStart.over === 0)
+
+  const atFloor = weightBarFractions(CONFIG.weight.floor)
+  t.ok('the bar is empty at the weight floor', atFloor.base === 0)
+
+  const atCap = weightBarFractions(CONFIG.weight.cap)
+  t.ok('the bar is full at the cap', atCap.base === 1)
+  t.ok('overfill is full at the cap', atCap.over === 1)
+
+  const mid = weightBarFractions((CONFIG.weight.floor + CONFIG.weight.start) / 2)
+  t.ok('halfway to the floor reads as half a bar', Math.abs(mid.base - 0.5) < 1e-9)
+
+  // Monotonic, and clamped outside the legal range.
+  let prev = -1
+  for (let w = CONFIG.weight.floor; w <= CONFIG.weight.start; w += 5) {
+    const { base } = weightBarFractions(w)
+    t.ok(`bar increases with weight at ${w}`, base >= prev)
+    prev = base
+  }
+  t.ok('below the floor clamps to empty', weightBarFractions(0).base === 0)
+  t.ok('above the cap clamps to full', weightBarFractions(9999).over === 1)
+}
+
 /** Nobody fights until every human seat has read the rules and tapped READY. */
 function testReadyGate(t) {
   const engine = createEngine({ seed: 'ready', seats: { p1: 'human', p2: 'human' }, phase: 'ready' })
@@ -403,6 +510,9 @@ export function runSelfTests() {
     ['round end: ring-out winner + timeout tiebreak', testMatchEnd],
     ['best-of-3 rounds: tally, reset, match end', testRounds],
     ['bots actually land hits and pushes', testBotsActuallyFight],
+    ['bots never walk themselves out of the ring', testBotsStayInTheRing],
+    ['bot tiers are a real skill ladder', testBotTierGap],
+    ['weight bar reads full at the starting weight', testWeightBar],
     ['ready gate: nobody fights until both tap READY', testReadyGate],
     ['streak: winner-stays-on + seat opens on loss', testStreak],
     ['headless bot vs bot terminates legally', testBotVsBot],

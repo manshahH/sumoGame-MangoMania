@@ -90,6 +90,25 @@ past.
 takes the round; if weight is tied, whoever's closer to the center. Weight and positions reset
 between rounds. First to 2 rounds takes the match.
 
+**The weight bar reads full at 100.** Anything a fighter earns above the starting weight (from
+mangoes) rides on top of the full bar as a gold overfill segment, rather than the bar being scaled
+across the whole floor-to-cap range and starting life two-thirds empty.
+
+### Bot difficulty
+
+Three tiers, and they differ on every axis rather than being one bot at three speeds — thinking
+speed, nerve, defence, aggression, footwork, ring craft and self-preservation all move together:
+
+| Tier | Plays like |
+| --- | --- |
+| **ROOKIE** | Slow, timid and clumsy near the edge. Hesitates a third of the time, almost never parries. Beatable by anyone. |
+| **OZEKI** *(default)* | Solid. Softens you up, then takes the push when it's there. |
+| **YOKOZUNA** | Fast, reads your pushes, and walks you onto the edge on purpose. |
+
+Measured head-to-head over 120 matches with seats alternated: YOKOZUNA beats ROOKIE 100%, OZEKI
+beats ROOKIE 100%, and YOKOZUNA edges OZEKI 72% — a strictly ordered ladder, asserted by the
+self-tests so the tiers can't quietly collapse into each other.
+
 **Winner stays on.** The champion holds the ring and their win streak is tracked (shown on-screen
 and kept in the browser's `localStorage`). After a match you get a result screen with **PLAY
 AGAIN** or **LOBBY**.
@@ -162,7 +181,9 @@ else.
       screen shake, dust and a hitstop freeze
 - [x] The dohyo is drawn from the live ring radius, so the boundary is exactly where a ring-out
       happens and the shrink is visible
-- [x] `runSelfTests()` all-pass (79/79, `npm test` or `?test`)
+- [x] Three genuinely different bot tiers, and no bot ever walks itself out of the ring
+- [x] Weight bars read full at the starting weight, with mango overfill shown on top
+- [x] `runSelfTests()` all-pass (116/116, `npm test` or `?test`)
 
 ---
 

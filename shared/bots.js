@@ -26,6 +26,36 @@ function tierFor(tierKey) {
   return CONFIG.bots.tiers[tierKey] || CONFIG.bots.tiers[CONFIG.bots.defaultTier]
 }
 
+/** The radius inside which this bot considers itself safe from its own ring-out. */
+function safeRadius(self, state) {
+  const margin = bodyRadiusFromWeight(self.weight) * CONFIG.bots.edgeMarginBodies
+  return Math.max(state.ring.radius * 0.25, state.ring.radius - margin)
+}
+
+/**
+ * Bends a movement vector back toward the middle when the bot has strayed too
+ * near the boundary.
+ *
+ * This runs every tick rather than only at decision time. A bot that only
+ * reconsiders every reactionMs will happily hold a stale heading straight off
+ * the edge - which is exactly what made bots appear to wander out on their own.
+ */
+function ringGuard(self, state, move, tier) {
+  const dx = self.x - state.ring.cx
+  const dy = self.y - state.ring.cy
+  const dist = Math.hypot(dx, dy)
+  const safe = safeRadius(self, state)
+  if (dist <= safe || dist === 0) return move
+
+  const past = Math.min(1, (dist - safe) / Math.max(1, state.ring.radius - safe))
+  const inward = { x: -dx / dist, y: -dy / dist }
+  const k = Math.min(1, tier.edgeAwareness * (0.4 + 0.6 * past))
+  let mx = move.x * (1 - k) + inward.x * k
+  let my = move.y * (1 - k) + inward.y * k
+  const len = Math.hypot(mx, my)
+  return len > 1 ? { x: mx / len, y: my / len } : { x: mx, y: my }
+}
+
 function decide(seat, state, mem, rng, tier) {
   const self = state.fighters[seat]
   const oppSeat = seat === 'p1' ? 'p2' : 'p1'
@@ -48,12 +78,22 @@ function decide(seat, state, mem, rng, tier) {
   // Stand just outside touching distance, biased to the ring-center side.
   const touching = bodyRadiusFromWeight(self.weight) + bodyRadiusFromWeight(opp.weight)
   const standoff = touching * CONFIG.bots.standoffBodyMul
-  const bias = CONFIG.bots.edgeSeekBias
+  const bias = tier.edgeSeekBias
   const anchorX = -(outward.x * bias + toOpp.x * (1 - bias))
   const anchorY = -(outward.y * bias + toOpp.y * (1 - bias))
   const anchorLen = Math.hypot(anchorX, anchorY) || 1
-  const targetX = opp.x + (anchorX / anchorLen) * standoff
-  const targetY = opp.y + (anchorY / anchorLen) * standoff
+  let targetX = opp.x + (anchorX / anchorLen) * standoff
+  let targetY = opp.y + (anchorY / anchorLen) * standoff
+
+  // Never walk to a spot that is itself off the dohyo.
+  const safe = safeRadius(self, state)
+  const tdx = targetX - state.ring.cx
+  const tdy = targetY - state.ring.cy
+  const tdist = Math.hypot(tdx, tdy)
+  if (tdist > safe) {
+    targetX = state.ring.cx + (tdx / tdist) * safe
+    targetY = state.ring.cy + (tdy / tdist) * safe
+  }
 
   let mvx = targetX - self.x
   let mvy = targetY - self.y
@@ -79,6 +119,13 @@ function decide(seat, state, mem, rng, tier) {
   const inPushRange = dist <= CONFIG.push.range
   const canHit = free && inHitRange && self.cooldowns.hit <= 0
   const canPush = free && inPushRange && self.cooldowns.push <= 0
+
+  // Nerve. A rookie regularly squares up and then does nothing with it.
+  if (tier.hesitateChance && rng() < tier.hesitateChance) {
+    mem.buttons = { a: false, b: false }
+    mem.holdUntil = 0
+    return
+  }
 
   const oppLight = opp.weight < CONFIG.weight.start * 0.9
   const oppNearEdge = Math.hypot(opp.x - state.ring.cx, opp.y - state.ring.cy) > state.ring.radius * 0.55
@@ -149,5 +196,8 @@ export function stepBot(seat, state, mem, rng, tierKey) {
     }
   }
 
-  return { move: mem.move, a: mem.buttons.a, b: mem.buttons.b }
+  // Applied every tick, after whatever the last decision was, so self-
+  // preservation can override a stale heading immediately.
+  const move = ringGuard(self, state, mem.move, tier)
+  return { move, a: mem.buttons.a, b: mem.buttons.b }
 }
