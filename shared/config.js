@@ -74,20 +74,26 @@ export const CONFIG = {
   },
 
   // ---- ring ---------------------------------------------------------------
+  // A round is short, so the shrink has to bite early. The sand the fighters
+  // stand on IS this circle - the renderer draws the dohyo from these numbers
+  // rather than from a fixed-size background image, so the shrink is visible.
   ring: {
     cx: 0,
     cy: 0,
-    baseRadius: 240,
-    shrinkStartSec: 20,
-    shrinkEndSec: 45,
-    shrinkToFraction: 0.6, // ring radius at shrinkEndSec and after
+    baseRadius: 210,
+    shrinkStartSec: 10,
+    shrinkEndSec: 26,
+    shrinkToFraction: 0.55, // ring radius at shrinkEndSec and after
   },
 
   // ---- match flow -----------------------------------------------------------
   match: {
     countdownSeconds: 3,
-    timeoutSeconds: 50, // hard cap - the shrinking ring should end it before this
-    endHoldSeconds: 3, // how long the win screen holds before returning to lobby
+    roundSeconds: 30, // per-round hard cap; the shrinking ring usually ends it first
+    roundsToWin: 2, // best of 3
+    maxRounds: 3,
+    roundEndHoldSeconds: 2.4, // "P1 TAKES ROUND 1" card between rounds
+    matchEndHoldSeconds: 4, // winner pose before the result screen is actionable
   },
 
   // ---- bots -----------------------------------------------------------------
@@ -95,28 +101,38 @@ export const CONFIG = {
     tiers: {
       rookie: {
         label: 'ROOKIE',
-        reactionMs: 480,
+        reactionMs: 420,
         parryChance: 0.12,
         pushChance: 0.35,
         aimJitter: 0.22,
       },
       ozeki: {
         label: 'OZEKI',
-        reactionMs: 300,
+        reactionMs: 260,
         parryChance: 0.24,
         pushChance: 0.5,
         aimJitter: 0.12,
       },
       yokozuna: {
         label: 'YOKOZUNA',
-        reactionMs: 160,
+        reactionMs: 150,
         parryChance: 0.38,
-        pushChance: 0.6,
+        pushChance: 0.62,
         aimJitter: 0.05,
       },
     },
     defaultTier: 'ozeki',
     edgeSeekBias: 0.55, // how strongly the bot tries to line the opponent up with the edge
+    // A bot presses a button for this long. It MUST exceed parry.graceMs or the
+    // press is released before the action commits and the bot never attacks at
+    // all - it just walks into the opponent and shoves them around by collision.
+    pressSeconds: 0.2,
+    // How far outside touching-bodies the bot likes to stand. Below 1.0 it ends
+    // up permanently overlapping the opponent, and collision resolution shoves
+    // the pair apart every tick instead of either of them landing a blow. Much
+    // above ~1.05 and it parks outside hit range and whiffs everything, so this
+    // wants to stay in the narrow band between "touching" and "hit.range".
+    standoffBodyMul: 1.02,
   },
 
   // ---- streak / leaderboard ---------------------------------------------

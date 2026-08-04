@@ -3,6 +3,8 @@
 
 import { CONFIG, SEATS, speedFromWeight, pushResistance, knockbackDistance } from './config.js'
 import { createMatchState, stepMatch, setInput, isOutsideRing, clampWeight, timeoutWinner, drainEvents } from './sim.js'
+import { createBotMemory, stepBot } from './bots.js'
+import { makeRng } from './rng.js'
 import { createEngine } from './engine.js'
 import { createStreak, recordWin } from './streak.js'
 import { createLobby, addPlayer, claimStation, resolveStations, clearSeat } from './roles.js'
@@ -216,7 +218,7 @@ function testCombo(t) {
 }
 
 function testMatchEnd(t) {
-  // Ring-out ends the match with the pushed-out fighter's opponent winning.
+  // A ring-out awards a ROUND, not the whole match.
   {
     const state = freshFightingState('ringout-end')
     place(state, 'p1', 0, 0)
@@ -224,16 +226,18 @@ function testMatchEnd(t) {
     setInput(state, 'p1', neutralInput())
     setInput(state, 'p2', neutralInput())
     stepMatch(state, DT)
-    t.ok('the match ended', state.phase === 'ended')
-    t.ok('ring-out is the reason', state.endReason === 'ringout')
-    t.ok('p1 (still inside) wins', state.winner === 'p1')
+    t.ok('a ring-out ends the round, not the match', state.phase === 'roundEnd')
+    t.ok('ring-out is the reason', state.roundReason === 'ringout')
+    t.ok('p1 (still inside) takes the round', state.roundWinner === 'p1')
+    t.ok('the round is on p1s tally', state.rounds.p1 === 1 && state.rounds.p2 === 0)
+    t.ok('no match winner yet', state.winner === null)
   }
 
   // Timeout applies the weight-then-center tiebreak.
   {
     const state = createMatchState({ seed: 'timeout' })
     state.phase = 'fighting'
-    state.timeSec = CONFIG.match.timeoutSeconds - DT
+    state.timeSec = CONFIG.match.roundSeconds - DT
     state.fighters.p1.weight = 120
     state.fighters.p2.weight = 90
     place(state, 'p1', 5, 0)
@@ -241,9 +245,8 @@ function testMatchEnd(t) {
     setInput(state, 'p1', neutralInput())
     setInput(state, 'p2', neutralInput())
     stepMatch(state, DT)
-    t.ok('timeout ends the match', state.phase === 'ended' && state.endReason === 'timeout')
-    t.ok('the heavier fighter wins the timeout tiebreak', state.winner === 'p1')
-    t.ok('timeoutWinner() agrees', timeoutWinner({ ...state, fighters: { p1: { ...state.fighters.p1, weight: 120 }, p2: { ...state.fighters.p2, weight: 90 } } }) === 'p1')
+    t.ok('timeout ends the round', state.phase === 'roundEnd' && state.roundReason === 'timeout')
+    t.ok('the heavier fighter wins the timeout tiebreak', state.roundWinner === 'p1')
 
     // Equal weight - closer to center wins.
     const centerCheck = createMatchState({ seed: 'timeout-center' })
@@ -253,6 +256,69 @@ function testMatchEnd(t) {
     place(centerCheck, 'p2', 40, 0)
     t.ok('equal weight falls back to distance from center', timeoutWinner(centerCheck) === 'p1')
   }
+}
+
+function testRounds(t) {
+  // Winning CONFIG.match.roundsToWin rounds takes the match.
+  const state = freshFightingState('rounds')
+  const winRoundFor = (seat) => {
+    const loser = seat === 'p1' ? 'p2' : 'p1'
+    place(state, seat, 0, 0)
+    place(state, loser, state.ring.radius + 10, 0)
+    setInput(state, 'p1', neutralInput())
+    setInput(state, 'p2', neutralInput())
+    stepMatch(state, DT)
+  }
+
+  winRoundFor('p1')
+  t.ok('round 1 to p1', state.rounds.p1 === 1 && state.phase === 'roundEnd')
+  t.ok('the match is still live after one round', state.winner === null)
+
+  // Let the round-end card lapse; the next round should set itself up fresh.
+  run(state, CONFIG.match.roundEndHoldSeconds + 0.1)
+  t.ok('round 2 is queued', state.round === 2)
+  t.ok('the next round starts on a countdown', state.phase === 'countdown')
+  t.ok('weight is restored for the new round', state.fighters.p2.weight === CONFIG.weight.start)
+  t.ok('the ring is back to full size', state.ring.radius === CONFIG.ring.baseRadius)
+  t.ok('the round tally survives the reset', state.rounds.p1 === 1)
+
+  run(state, CONFIG.match.countdownSeconds + 0.05)
+  t.ok('round 2 is live', state.phase === 'fighting')
+  winRoundFor('p1')
+  t.ok('p1 reaching roundsToWin ends the match', state.phase === 'matchEnd')
+  t.ok('p1 is the match winner', state.winner === 'p1')
+  t.ok('the match went to 2-0', state.rounds.p1 === 2 && state.rounds.p2 === 0)
+  t.ok('a match never exceeds maxRounds', state.round <= CONFIG.match.maxRounds)
+}
+
+/**
+ * The bug this guards: a bot press shorter than the parry grace window is
+ * released before the sim commits the action, so the bot never lands anything
+ * and the "fight" is two bodies shoving each other by collision alone.
+ */
+function testBotsActuallyFight(t) {
+  t.ok(
+    'a bot press outlasts the parry grace window',
+    CONFIG.bots.pressSeconds > CONFIG.parry.graceMs / 1000
+  )
+  t.ok('bots stand outside body-overlap range', CONFIG.bots.standoffBodyMul > 1)
+
+  const state = freshFightingState('bot-fight')
+  const mem = { p1: createBotMemory(), p2: createBotMemory() }
+  const rng = makeRng('bot-fight:rng')
+  const counts = {}
+  const steps = Math.round(CONFIG.match.roundSeconds / DT)
+  for (let i = 0; i < steps; i++) {
+    for (const seat of SEATS) {
+      setInput(state, seat, stepBot(seat, state, mem[seat], rng, 'ozeki'))
+    }
+    stepMatch(state, DT)
+    for (const e of drainEvents(state)) counts[e.type] = (counts[e.type] || 0) + 1
+    if (state.phase !== 'fighting') break
+  }
+  t.ok(`bots land hits (got ${counts.hit || 0})`, (counts.hit || 0) > 0, JSON.stringify(counts))
+  t.ok(`bots throw pushes (got ${counts.push || 0})`, (counts.push || 0) > 0, JSON.stringify(counts))
+  t.ok('a bot round resolves rather than stalling', state.phase !== 'fighting')
 }
 
 function testStreak(t) {
@@ -278,23 +344,50 @@ function testStreak(t) {
 
 function testBotVsBot(t) {
   const engine = createEngine({ seed: 'headless-bvb', seats: { p1: 'bot', p2: 'bot' } })
-  const maxSeconds = CONFIG.match.countdownSeconds + CONFIG.match.timeoutSeconds + 2
+  // Worst case: every round runs the full clock, with a countdown and a
+  // round-end card either side of it.
+  const perRound = CONFIG.match.countdownSeconds + CONFIG.match.roundSeconds + CONFIG.match.roundEndHoldSeconds
+  const maxSeconds = perRound * CONFIG.match.maxRounds + 2
   const steps = Math.ceil(maxSeconds / DT)
   let endedAt = -1
   for (let i = 0; i < steps; i++) {
     engine.tick(DT)
-    if (engine.state.phase === 'ended') {
+    if (engine.state.phase === 'matchEnd') {
       endedAt = i * DT
       break
     }
   }
-  t.ok('a headless bot-vs-bot match terminates within the max match time', endedAt >= 0 && endedAt <= maxSeconds)
+  t.ok(`a headless bot-vs-bot match terminates within ${maxSeconds.toFixed(0)}s`, endedAt >= 0 && endedAt <= maxSeconds)
   t.ok('the match ended with a legal winner', SEATS.includes(engine.state.winner))
   t.ok('the end reason is ring-out or timeout', engine.state.endReason === 'ringout' || engine.state.endReason === 'timeout')
+  t.ok('the winner actually took enough rounds', engine.state.rounds[engine.state.winner] >= CONFIG.match.roundsToWin)
   for (const seat of SEATS) {
     const f = engine.state.fighters[seat]
     t.ok(`${seat} weight stayed in bounds`, f.weight >= CONFIG.weight.floor - 1e-6 && f.weight <= CONFIG.weight.cap + 1e-6)
   }
+}
+
+/** Nobody fights until every human seat has read the rules and tapped READY. */
+function testReadyGate(t) {
+  const engine = createEngine({ seed: 'ready', seats: { p1: 'human', p2: 'human' }, phase: 'ready' })
+  engine.tick(DT)
+  t.ok('a ready-phase match does not start on its own', engine.state.phase === 'ready')
+  engine.setReady('p1', true)
+  engine.tick(DT)
+  t.ok('one player readying is not enough', engine.state.phase === 'ready')
+  engine.setReady('p2', true)
+  engine.tick(DT)
+  t.ok('both ready starts the countdown', engine.state.phase === 'countdown')
+
+  // A bot seat is ready the moment it sits down, so a solo player only waits
+  // on themselves.
+  const solo = createEngine({ seed: 'ready-solo', seats: { p1: 'human', p2: 'bot' }, phase: 'ready' })
+  t.ok('a bot seat counts as ready immediately', solo.ready.p2 === true)
+  solo.tick(DT)
+  t.ok('solo still waits on the human', solo.state.phase === 'ready')
+  solo.setReady('p1', true)
+  solo.tick(DT)
+  t.ok('the human readying starts a solo match', solo.state.phase === 'countdown')
 }
 
 export function runSelfTests() {
@@ -307,7 +400,10 @@ export function runSelfTests() {
     ['parry resolution (active window vs expired)', testParryResolution],
     ['weight bounds', testWeightBounds],
     ['combo counter + milestone mango + parry breaks combo', testCombo],
-    ['match end: ring-out winner + timeout tiebreak', testMatchEnd],
+    ['round end: ring-out winner + timeout tiebreak', testMatchEnd],
+    ['best-of-3 rounds: tally, reset, match end', testRounds],
+    ['bots actually land hits and pushes', testBotsActuallyFight],
+    ['ready gate: nobody fights until both tap READY', testReadyGate],
     ['streak: winner-stays-on + seat opens on loss', testStreak],
     ['headless bot vs bot terminates legally', testBotVsBot],
   ]

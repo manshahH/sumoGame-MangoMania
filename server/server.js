@@ -128,7 +128,9 @@ function ackRoom(room, ack) {
     type: 'svg',
     margin: 1,
     errorCorrectionLevel: 'M',
-    color: { dark: CONFIG.colors.ink, light: '#00000000' },
+    // Dark modules on a light ground. Cream-on-transparent renders invisible
+    // against the panel and phone cameras cannot read it.
+    color: { dark: '#140b1a', light: '#ffe9c7' },
   })
     .then((qrSvg) => ack({ ...base, qrSvg }))
     // No QR is survivable - the URL is on screen next to it.
@@ -286,6 +288,18 @@ io.on('connection', (socket) => {
     const host = hostSocket(room)
     if (host) host.emit('roster', lobbyPayload(room))
     broadcastLobby(room)
+  })
+
+  // "I have read the rules and I am ready to fight." Separate from claiming a
+  // seat: you claim once, then ready up before every match.
+  socket.on('ready', (payload = {}) => {
+    const room = rooms.get(socket.data.room)
+    if (!room || !socket.data.playerId) return
+    if (room.lobby.claims[payload.seat] !== socket.data.playerId) return // not your seat
+    const host = hostSocket(room)
+    if (host) {
+      host.emit('ready', { playerId: socket.data.playerId, seat: payload.seat, ready: !!payload.ready })
+    }
   })
 
   // Every control a phone touches arrives here and is forwarded verbatim to

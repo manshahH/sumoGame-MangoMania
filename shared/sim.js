@@ -56,25 +56,55 @@ function createFighter(id, x, y) {
   }
 }
 
+const SPAWN_OFFSET = CONFIG.ring.baseRadius * 0.42
+
 export function createMatchState(opts = {}) {
   const seed = opts.seed ?? `sumo-${Date.now()}`
-  const spawn = CONFIG.ring.baseRadius * 0.42
   return {
     seed,
     rngState: hashSeed(seed),
-    phase: 'countdown', // 'countdown' | 'fighting' | 'ended'
+    // 'ready'     - waiting for both players to read the rules and ready up
+    // 'countdown' - 3, 2, 1 before a round
+    // 'fighting'  - the round is live
+    // 'roundEnd'  - a round was just won; the card is up, next round is queued
+    // 'matchEnd'  - somebody took the match
+    phase: opts.phase || 'countdown',
     timeSec: 0,
     countdown: CONFIG.match.countdownSeconds,
-    endHold: 0,
+    holdT: 0, // counts down the roundEnd / matchEnd card
+    round: 1,
+    rounds: { p1: 0, p2: 0 }, // rounds won, best of CONFIG.match.maxRounds
+    roundWinner: null,
+    roundReason: null,
     ring: { cx: CONFIG.ring.cx, cy: CONFIG.ring.cy, radius: CONFIG.ring.baseRadius },
-    winner: null,
+    winner: null, // match winner
     endReason: null, // 'ringout' | 'timeout'
     events: [],
     fighters: {
-      p1: createFighter('p1', CONFIG.ring.cx - spawn, CONFIG.ring.cy),
-      p2: createFighter('p2', CONFIG.ring.cx + spawn, CONFIG.ring.cy),
+      p1: createFighter('p1', CONFIG.ring.cx - SPAWN_OFFSET, CONFIG.ring.cy),
+      p2: createFighter('p2', CONFIG.ring.cx + SPAWN_OFFSET, CONFIG.ring.cy),
     },
   }
+}
+
+/** Wipes both fighters back to the line for a fresh round. Weight resets too. */
+export function resetRound(state) {
+  state.fighters.p1 = createFighter('p1', CONFIG.ring.cx - SPAWN_OFFSET, CONFIG.ring.cy)
+  state.fighters.p2 = createFighter('p2', CONFIG.ring.cx + SPAWN_OFFSET, CONFIG.ring.cy)
+  state.timeSec = 0
+  state.countdown = CONFIG.match.countdownSeconds
+  state.ring.radius = CONFIG.ring.baseRadius
+  state.roundWinner = null
+  state.roundReason = null
+  state.phase = 'countdown'
+}
+
+/** Both players have read the rules and tapped READY. */
+export function beginCountdown(state) {
+  if (state.phase !== 'ready') return false
+  state.phase = 'countdown'
+  state.countdown = CONFIG.match.countdownSeconds
+  return true
 }
 
 export function drainEvents(state) {
@@ -317,41 +347,82 @@ export function timeoutWinner(state) {
   return 'p1'
 }
 
-function endMatch(state, winner, reason) {
-  state.phase = 'ended'
-  state.winner = winner
-  state.endReason = reason
-  state.endHold = CONFIG.match.endHoldSeconds
+function poseFighters(state, winner) {
   for (const seat of SEATS) {
     const f = state.fighters[seat]
-    if (seat !== winner) {
-      f.alive = false
-      f.anim = 'ringout'
-      f.animLock = true
-    } else {
+    f.animLock = true
+    if (seat === winner) {
       f.anim = 'celebrate'
-      f.animLock = true
+    } else {
+      f.alive = false
+      f.ringout = true
+      f.anim = 'ringout'
     }
   }
-  state.events.push({ type: 'matchEnd', winner, loser: otherSeat(winner), reason })
+}
+
+/** A round was decided. Award it, then either queue the next one or end the match. */
+function endRound(state, winner, reason) {
+  state.rounds[winner] += 1
+  state.roundWinner = winner
+  state.roundReason = reason
+  poseFighters(state, winner)
+  state.events.push({
+    type: 'roundEnd',
+    winner,
+    loser: otherSeat(winner),
+    reason,
+    round: state.round,
+    rounds: { ...state.rounds },
+  })
+
+  if (state.rounds[winner] >= CONFIG.match.roundsToWin) {
+    state.phase = 'matchEnd'
+    state.winner = winner
+    state.endReason = reason
+    state.holdT = CONFIG.match.matchEndHoldSeconds
+    state.events.push({
+      type: 'matchEnd',
+      winner,
+      loser: otherSeat(winner),
+      reason,
+      rounds: { ...state.rounds },
+    })
+    return
+  }
+
+  state.phase = 'roundEnd'
+  state.holdT = CONFIG.match.roundEndHoldSeconds
 }
 
 export function stepMatch(state, dtRaw) {
   const dt = Math.min(Math.max(dtRaw, 0), CONFIG.maxStepSeconds)
   if (dt <= 0) return
 
+  // Waiting on the players to read the rules and tap READY. Nothing simulates.
+  if (state.phase === 'ready') return
+
   if (state.phase === 'countdown') {
     state.countdown -= dt
     if (state.countdown <= 0) {
       state.phase = 'fighting'
       state.timeSec = 0
-      state.events.push({ type: 'fightStart' })
+      state.events.push({ type: 'roundStart', round: state.round })
     }
     return
   }
 
-  if (state.phase === 'ended') {
-    state.endHold = Math.max(0, state.endHold - dt)
+  if (state.phase === 'roundEnd') {
+    state.holdT = Math.max(0, state.holdT - dt)
+    if (state.holdT <= 0) {
+      state.round += 1
+      resetRound(state)
+    }
+    return
+  }
+
+  if (state.phase === 'matchEnd') {
+    state.holdT = Math.max(0, state.holdT - dt)
     return
   }
 
@@ -374,13 +445,13 @@ export function stepMatch(state, dtRaw) {
   for (const seat of SEATS) {
     const f = state.fighters[seat]
     if (isOutsideRing(f.x, f.y, state.ring)) {
-      endMatch(state, otherSeat(seat), 'ringout')
+      endRound(state, otherSeat(seat), 'ringout')
       return
     }
   }
 
-  if (state.timeSec >= CONFIG.match.timeoutSeconds) {
-    endMatch(state, timeoutWinner(state), 'timeout')
+  if (state.timeSec >= CONFIG.match.roundSeconds) {
+    endRound(state, timeoutWinner(state), 'timeout')
   }
 }
 
