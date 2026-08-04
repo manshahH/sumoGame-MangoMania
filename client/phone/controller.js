@@ -1,19 +1,27 @@
-// The fight controls: an analog joystick on the left, two big diagonal
-// arcade buttons on the right (A upper-right = HIT, B lower-left = PUSH,
-// both = PARRY - the actual parry detection happens on the host; this module
-// only ever reports raw button state). Streams input at animation-frame rate
-// so the host always has a fresh sample regardless of network jitter.
+// The fight controls. Thumbs live at the BOTTOM of a phone, so that is where
+// both halves sit: joystick bottom-left, the two arcade buttons bottom-right.
+//
+// The buttons are offset on a diagonal with B (PUSH) above and A (HIT) below.
+// A is the button you press most, so it gets the lower, easier reach, and the
+// gap between them is deliberately small enough to mash both with one thumb -
+// that is the parry.
+//
+// This module only ever reports raw button state. Whether a press is a hit, a
+// push or a parry is decided by the host.
 
 export function mountController(root, { onChange } = {}) {
   root.innerHTML = `
     <div class="padwrap">
       <div id="joyzone" class="joyzone">
-        <div id="joybase" class="joybase"><div id="joyknob" class="joyknob"></div></div>
-        <div class="label dim joyhint">MOVE</div>
+        <div class="joybase"><div id="joyknob" class="joyknob"></div></div>
+        <div class="padlabel">MOVE</div>
       </div>
       <div id="btnzone" class="btnzone">
-        <button id="btnA" class="arcadebtn abtn" aria-label="Hit">A<span class="btnsub">HIT</span></button>
-        <button id="btnB" class="arcadebtn bbtn" aria-label="Push">B<span class="btnsub">PUSH</span></button>
+        <div class="btncluster">
+          <button id="btnB" class="arcadebtn bbtn" aria-label="Push">B<span class="btnsub">PUSH</span></button>
+          <button id="btnA" class="arcadebtn abtn" aria-label="Hit">A<span class="btnsub">HIT</span></button>
+        </div>
+        <div class="padlabel">A+B = PARRY</div>
       </div>
     </div>
   `
@@ -28,14 +36,10 @@ export function mountController(root, { onChange } = {}) {
   let bDown = false
   let joyPointerId = null
   let joyCenter = { x: 0, y: 0 }
-  let joyRadius = 60
+  let joyRadius = 70
 
   function vibrate(ms) {
     if (navigator.vibrate) navigator.vibrate(ms)
-  }
-
-  function setKnob(dx, dy) {
-    knob.style.transform = `translate(${dx}px, ${dy}px)`
   }
 
   function onJoyDown(e) {
@@ -43,8 +47,8 @@ export function mountController(root, { onChange } = {}) {
     joyPointerId = e.pointerId
     const rect = joyzone.getBoundingClientRect()
     joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-    joyRadius = Math.min(rect.width, rect.height) / 2 - 14
-    joyzone.setPointerCapture(e.pointerId)
+    joyRadius = Math.min(rect.width, rect.height) / 2 - 18
+    capture(joyzone, e.pointerId)
     updateJoy(e)
   }
 
@@ -57,7 +61,7 @@ export function mountController(root, { onChange } = {}) {
       dx = (dx / len) * joyRadius
       dy = (dy / len) * joyRadius
     }
-    setKnob(dx, dy)
+    knob.style.transform = `translate(${dx}px, ${dy}px)`
     move.x = joyRadius ? dx / joyRadius : 0
     move.y = joyRadius ? dy / joyRadius : 0
   }
@@ -67,7 +71,7 @@ export function mountController(root, { onChange } = {}) {
     joyPointerId = null
     move.x = 0
     move.y = 0
-    setKnob(0, 0)
+    knob.style.transform = 'translate(0px, 0px)'
   }
 
   joyzone.addEventListener('pointerdown', onJoyDown)
@@ -75,10 +79,21 @@ export function mountController(root, { onChange } = {}) {
   joyzone.addEventListener('pointerup', endJoy)
   joyzone.addEventListener('pointercancel', endJoy)
 
+  function capture(el, pointerId) {
+    // Not every browser will hand over capture (and it throws outright if the
+    // pointer has already been released). Capture is an improvement, not a
+    // requirement - losing it must never cost us the button press itself.
+    try {
+      el.setPointerCapture(pointerId)
+    } catch {
+      /* press still registers via the pointerup/cancel listeners below */
+    }
+  }
+
   function wireButton(el, setDown) {
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault()
-      el.setPointerCapture(e.pointerId)
+      capture(el, e.pointerId)
       setDown(true)
       el.classList.add('held')
       vibrate(15)
@@ -94,20 +109,17 @@ export function mountController(root, { onChange } = {}) {
   wireButton(btnA, (v) => (aDown = v))
   wireButton(btnB, (v) => (bDown = v))
 
-  let raf = 0
-  function loop() {
+  let raf = requestAnimationFrame(function loop() {
     onChange?.({ move: { x: move.x, y: move.y }, a: aDown, b: bDown })
     raf = requestAnimationFrame(loop)
-  }
-  raf = requestAnimationFrame(loop)
+  })
 
   return {
+    setParryGlow(on) {
+      root.querySelector('.btnzone')?.classList.toggle('parryglow', !!on)
+    },
     destroy() {
       cancelAnimationFrame(raf)
-      joyzone.removeEventListener('pointerdown', onJoyDown)
-      joyzone.removeEventListener('pointermove', updateJoy)
-      joyzone.removeEventListener('pointerup', endJoy)
-      joyzone.removeEventListener('pointercancel', endJoy)
     },
   }
 }

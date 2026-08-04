@@ -64,6 +64,7 @@ export function createPhoneNet(handlers = {}) {
     net.joined = false
   }
   net.sendInput = (seat, input) => socket.emit('input', { seat, input })
+  net.setReady = (seat, ready) => socket.emit('ready', { seat, ready })
 
   return net
 }

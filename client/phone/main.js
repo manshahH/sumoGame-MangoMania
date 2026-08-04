@@ -1,6 +1,6 @@
-// Phone client: join a room, claim P1 or P2 (or leave it for the bot), then
+// Phone client: join a room, claim P1 or P2, read the rules and ready up, then
 // drive the fight controls. The phone never renders the match - only its own
-// small HUD slice, which keeps it immune to render/network jitter.
+// small HUD slice, which keeps it immune to render and network jitter.
 
 import { SEATS, SEAT_LABELS, CONFIG } from '/shared/config.js'
 import { createPhoneNet } from './net.js'
@@ -14,16 +14,20 @@ const state = {
   screen: 'join',
   lobby: null,
   mySeats: [],
-  activeSeat: null,
+  seat: null,
   started: false,
-  lastPhase: null,
   pad: null,
+  phase: null,
+  readySent: false,
+  lastRound: null,
 }
 
-const SCREENS = ['join', 'lobby', 'play', 'idle']
+const SCREENS = ['join', 'lobby', 'rules', 'play', 'idle']
 function showScreen(name) {
+  if (state.screen === name) return
   state.screen = name
   for (const s of SCREENS) $(`#p-screen-${s}`)?.classList.toggle('hidden', s !== name)
+  if (name !== 'play') unmountPad()
 }
 
 // ----------------------------------------------------------------- net -----
@@ -34,28 +38,28 @@ const net = createPhoneNet({
   onJoined(res) {
     $('#p-room').textContent = net.room
     applyLobby(res.lobby)
-    if (res.started) enterPlay()
-    else showScreen('lobby')
+    showScreen('lobby')
     const wanted = params.get('seat')
     if (wanted && SEATS.includes(wanted) && !state.mySeats.includes(wanted)) net.claim(wanted)
   },
   onLobby: applyLobby,
   onStart() {
     state.started = true
-    enterPlay()
+    state.readySent = false
+    state.lastRound = null
   },
   onToLobby(lobby) {
     state.started = false
-    unmountPad()
+    state.readySent = false
+    state.phase = null
     applyLobby(lobby)
     showScreen('lobby')
   },
   onHud({ seat, state: hud }) {
-    if (state.activeSeat !== seat) return
-    updateHud(hud)
+    if (state.seat !== seat) return
+    applyHud(hud)
   },
   onToast: showToast,
-  onPhase() {},
   onHostGone() {
     showOverlay('RING OFFLINE', 'The desktop dropped. It will pick this room back up when it reloads.')
   },
@@ -67,8 +71,9 @@ function applyLobby(lobby) {
   state.lobby = lobby
   const me = (lobby.players || []).find((p) => p.id === net.id)
   state.mySeats = me ? me.seats : []
+  state.seat = state.mySeats[0] || null
   renderSeats()
-  if (state.screen === 'play' && !state.mySeats.length) showScreen('idle')
+  if (!state.seat && (state.screen === 'play' || state.screen === 'rules')) showScreen('idle')
 }
 
 function renderSeats() {
@@ -102,61 +107,106 @@ function renderSeats() {
 }
 
 // ---------------------------------------------------------------- play -----
-function enterPlay() {
-  state.started = true
-  if (!state.mySeats.length) {
-    showScreen('idle')
-    return
-  }
-  state.activeSeat = state.mySeats[0]
-  state.lastPhase = null
-  mountPad()
-  $('#hud-seatlabel').textContent = SEAT_LABELS[state.activeSeat]
-  $('#hud-seatlabel').className = `label ${state.activeSeat}text`
-  showScreen('play')
-}
-
 function mountPad() {
-  unmountPad()
-  const host = $('#p-pad')
-  state.pad = mountController(host, {
-    onChange: (input) => net.sendInput(state.activeSeat, input),
+  if (state.pad) return
+  state.pad = mountController($('#p-pad'), {
+    onChange: (input) => state.seat && net.sendInput(state.seat, input),
   })
 }
 
 function unmountPad() {
   state.pad?.destroy?.()
   state.pad = null
+  const host = $('#p-pad')
+  if (host) host.innerHTML = ''
 }
 
 function fmtClock(sec) {
   const s = Math.max(0, Math.ceil(sec))
-  return `00:${String(s).padStart(2, '0')}`
+  return `0:${String(s).padStart(2, '0')}`
 }
 
-function updateHud(hud) {
+/** The host drives every phone screen change through the HUD phase. */
+function applyHud(hud) {
   if (!hud) return
-  const pct = CONFIG.weight ? ((hud.weight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)) * 100 : 0
+
+  if (hud.phase === 'ready') {
+    $('#rules-goal').innerHTML = `PUSH <b>${(hud.opponent || 'THEM').slice(0, 12)}</b> OUT OF THE RING.<br />BEST OF ${hud.roundsToWin * 2 - 1} ROUNDS.`
+    const waiting = state.readySent || hud.ready
+    $('#btn-ready').textContent = waiting ? 'WAITING…' : 'I’M READY'
+    $('#btn-ready').classList.toggle('on', !waiting)
+    $('#btn-ready').disabled = !!waiting
+    $('#readyline').textContent = waiting ? 'WAITING FOR YOUR OPPONENT…' : 'TAP READY WHEN YOU’VE READ THIS'
+    showScreen('rules')
+    state.phase = hud.phase
+    return
+  }
+
+  showScreen('play')
+  mountPad()
+
+  $('#hud-seatlabel').textContent = SEAT_LABELS[state.seat] || ''
+  $('#hud-seatlabel').className = `seatname ${state.seat}text`
+
+  const pips = $('#hud-pips')
+  const won = hud.rounds?.[state.seat] || 0
+  if (pips.children.length !== hud.roundsToWin) {
+    pips.innerHTML = Array.from({ length: hud.roundsToWin }, () => '<span class="pip"></span>').join('')
+  }
+  ;[...pips.children].forEach((el, i) => el.classList.toggle('won', i < won))
+
+  const pct = ((hud.weight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)) * 100
   const bar = $('#hud-weightbar')
-  bar.classList.toggle('p2', state.activeSeat === 'p2')
+  bar.classList.toggle('p2', state.seat === 'p2')
   bar.querySelector('.fill').style.width = `${Math.max(0, Math.min(100, pct))}%`
   $('#hud-weightnum').textContent = Math.round(hud.weight)
   $('#hud-combo').textContent = `COMBO ${hud.combo || 0}`
   $('#hud-combo').classList.toggle('on', (hud.combo || 0) >= 2)
+
+  // The opponent's weight is the only thing that tells you when a push will
+  // actually throw them, so it earns a place on the controller.
+  const oppPct = ((hud.oppWeight - CONFIG.weight.floor) / (CONFIG.weight.cap - CONFIG.weight.floor)) * 100
+  $('#hud-oppbar').querySelector('.fill').style.width = `${Math.max(0, Math.min(100, oppPct))}%`
+  $('#hud-oppnum').textContent = Math.round(hud.oppWeight)
+  $('#hud-opplabel').textContent = (hud.opponent || 'VS').slice(0, 8)
+
   const light = $('#hud-parrylight')
   light.classList.toggle('on', !!hud.parryReady)
   light.classList.toggle('warn', !hud.parryReady && !!hud.parrying)
-  $('#hud-clock').textContent = hud.phase === 'fighting' ? fmtClock(hud.timeLeft) : hud.phase === 'countdown' ? fmtClock(hud.countdown) : '--:--'
+  state.pad?.setParryGlow(hud.parrying)
 
-  if (hud.phase !== state.lastPhase) {
-    if (hud.phase === 'countdown') flash('GET READY')
-    else if (hud.phase === 'fighting' && state.lastPhase === 'countdown') flash('SUMO!')
-    else if (hud.phase === 'ended') {
-      flash(hud.won ? 'YOU WIN!' : hud.endReason === 'ringout' ? 'RING OUT' : 'TIME')
-      if (navigator.vibrate) navigator.vibrate(hud.won ? [40, 30, 40, 30, 90] : [80])
+  const hint = $('#hud-pushhint')
+  const lighter = hud.oppWeight < hud.weight - 4
+  hint.textContent = hud.oppNearEdge
+    ? 'THEY ARE ON THE EDGE — PUSH WITH B!'
+    : lighter
+      ? 'THEY ARE LIGHT — PUSH WITH B!'
+      : 'SOFTEN THEM UP WITH A'
+  hint.classList.toggle('go', hud.oppNearEdge || lighter)
+
+  $('#hud-clock').textContent =
+    hud.phase === 'fighting' ? fmtClock(hud.timeLeft) : hud.phase === 'countdown' ? fmtClock(hud.countdown) : '—'
+
+  // Phase transitions drive the full-screen flash and the haptics.
+  if (hud.phase !== state.phase || hud.round !== state.lastRound) {
+    if (hud.phase === 'countdown') flash(`ROUND ${hud.round}`)
+    else if (hud.phase === 'fighting' && state.phase === 'countdown') {
+      flash('SUMO!')
+      buzz(30)
+    } else if (hud.phase === 'roundEnd') {
+      flash(hud.wonRound ? `ROUND ${hud.round}\nWON` : `ROUND ${hud.round}\nLOST`)
+      buzz(hud.wonRound ? [30, 40, 30] : 90)
+    } else if (hud.phase === 'matchEnd') {
+      flash(hud.wonMatch ? 'YOU WIN\nTHE MATCH!' : 'YOU LOSE')
+      buzz(hud.wonMatch ? [40, 30, 40, 30, 120] : 160)
     }
-    state.lastPhase = hud.phase
+    state.phase = hud.phase
+    state.lastRound = hud.round
   }
+}
+
+function buzz(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern)
 }
 
 let flashTimer = null
@@ -164,10 +214,10 @@ function flash(text) {
   const el = $('#p-matchflash')
   const txt = $('#p-matchflash-text')
   txt.textContent = text
-  txt.className = 'big ' + (state.activeSeat ? `${state.activeSeat}text` : '')
+  txt.className = `big ${state.seat ? `${state.seat}text` : ''}`
   el.classList.remove('hidden')
   clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => el.classList.add('hidden'), 1100)
+  flashTimer = setTimeout(() => el.classList.add('hidden'), 1400)
 }
 
 // -------------------------------------------------------------- toasts -----
@@ -189,18 +239,18 @@ function showOverlay(title, body) {
     document.body.appendChild(el)
   }
   el.innerHTML = `<div class="label warntext" style="font-size:14px">${title}</div>
-    <p class="label dim" style="max-width:320px; line-height:1.7">${body}</p>
+    <p class="label dim" style="max-width:320px; line-height:1.8">${body}</p>
     <button class="pixelbtn" onclick="location.reload()">RECONNECT</button>`
 }
 
-// ---------------------------------------------------------------- join -----
-function wireJoin() {
+// ---------------------------------------------------------------- wire -----
+function wire() {
   const roomIn = $('#in-room')
   const nameIn = $('#in-name')
   roomIn.value = (params.get('room') || sessionStorage.getItem('sumotime.lastroom') || '').toUpperCase()
   nameIn.value = (params.get('name') || localStorage.getItem(NAME_KEY) || '').toUpperCase()
 
-  $('#btn-join').addEventListener('click', () => {
+  const doJoin = () => {
     const room = roomIn.value.trim().toUpperCase()
     const name = nameIn.value.trim().toUpperCase() || 'CHALLENGER'
     if (!room) {
@@ -213,10 +263,22 @@ function wireJoin() {
     net.join(room, name, (res) => {
       if (!res?.ok) $('#joinerr').textContent = res?.reason || 'CONNECT FAILED'
     })
-  })
+  }
 
-  roomIn.addEventListener('keydown', (e) => e.key === 'Enter' && $('#btn-join').click())
-  nameIn.addEventListener('keydown', (e) => e.key === 'Enter' && $('#btn-join').click())
+  $('#btn-join').addEventListener('click', doJoin)
+  roomIn.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin())
+  nameIn.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin())
+
+  $('#btn-ready').addEventListener('click', () => {
+    if (!state.seat) return
+    state.readySent = true
+    net.setReady(state.seat, true)
+    $('#btn-ready').textContent = 'WAITING…'
+    $('#btn-ready').disabled = true
+    $('#btn-ready').classList.remove('on')
+    $('#readyline').textContent = 'WAITING FOR YOUR OPPONENT…'
+    buzz(20)
+  })
 
   $('#btn-leave').addEventListener('click', () => {
     net.leave()
@@ -224,24 +286,13 @@ function wireJoin() {
   })
 
   $('#p-menu').addEventListener('click', () => {
-    if (state.screen === 'play') {
-      unmountPad()
-      showScreen('lobby')
-    } else if (state.mySeats.length && state.started) enterPlay()
-    else showScreen('lobby')
+    showScreen(state.screen === 'lobby' ? (state.seat ? 'play' : 'idle') : 'lobby')
   })
 
-  if (params.get('room')) {
-    net.join(roomIn.value, nameIn.value || 'CHALLENGER', (res) => {
-      if (!res?.ok) {
-        showScreen('join')
-        $('#joinerr').textContent = res?.reason || 'CONNECT FAILED'
-      }
-    })
-  }
+  if (params.get('room')) doJoin()
 }
 
-wireJoin()
+wire()
 showScreen('join')
 
 if ('wakeLock' in navigator) {

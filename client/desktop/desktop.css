@@ -1,152 +1,180 @@
+/* The desktop is a TV or a laptop on a table at an event. Nothing ever
+   scrolls: the lobby fits, and the fight is edge to edge. */
+
+html,
 body.desktop {
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
+}
+
+body.desktop {
   display: flex;
   flex-direction: column;
 }
 
-#topbar {
+.screenview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pixelbtn.small {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 9px;
+}
+
+/* --------------------------------------------------------------- lobby --- */
+.lobbyhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 18px;
+  padding: 14px 24px;
   border-bottom: 4px solid var(--edge);
   background: var(--panel);
   flex: none;
 }
 
 #brand {
-  font-size: 20px;
+  font-size: 24px;
   color: var(--p1);
-  letter-spacing: 0.06em;
-}
-
-#brandsub {
-  font-size: 9px;
-  margin-top: 4px;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
 }
 
 .statuschip {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   border: 3px solid var(--edge);
   background: var(--panel-hi);
   font-size: 9px;
 }
 
-.screenview {
+.lobbygrid {
   flex: 1;
   min-height: 0;
-  padding: 22px;
-  overflow: auto;
-}
-
-/* --------------------------------------------------------------- lobby --- */
-.lobbygrid {
   display: grid;
-  grid-template-columns: 360px 1fr;
-  gap: 20px;
-  max-width: 1300px;
+  grid-template-columns: 400px 1fr;
+  gap: 24px;
+  padding: 24px;
+  max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
+  align-items: start;
 }
 
 .panel-title {
   font-size: 10px;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-bottom: 4px solid var(--edge);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.panel-title span {
+  color: #c9b8d6;
   white-space: nowrap;
-}
-
-.panel-title span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.panel-title span:last-child {
-  font-size: 8px;
-  flex: none;
 }
 
 .panel-body {
   padding: 16px;
 }
 
+.joinbody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.roomcode {
+  font-size: 44px;
+  letter-spacing: 0.12em;
+  color: var(--p1);
+  line-height: 1;
+}
+
+/* The QR is the single most important pixel area in the lobby: dark modules on
+   a bright cream ground, big enough to scan from a couple of metres. */
 .qrbox {
+  width: 300px;
+  height: 300px;
+  background: var(--ink);
+  padding: 10px;
+  border: 4px solid var(--edge);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
-  padding: 10px;
-  margin: 10px 0;
-  width: 220px;
-  height: 220px;
 }
 
 .qrbox svg {
   width: 100%;
   height: 100%;
-}
-
-.digits {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 28px;
-  letter-spacing: 0.14em;
-  color: var(--p1);
+  display: block;
 }
 
 .joinurl {
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.6;
   word-break: break-all;
   color: var(--p2);
+}
+
+.lobbyright {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
 }
 
 .seatcards {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 16px;
 }
 
 .seatcard {
-  padding: 16px;
+  padding: 22px 16px;
   text-align: center;
 }
 
 .seatcard h3 {
-  font-size: 16px;
-  margin-bottom: 10px;
+  font-size: 22px;
+  margin-bottom: 12px;
 }
 
-.seatcard .owner {
+.seatcard .who {
+  font-size: 13px;
   margin-top: 10px;
-  font-size: 10px;
+  line-height: 1.6;
 }
 
 .seatcard.claimed {
   border-color: var(--good);
 }
 
-.seatcard.botted {
-  opacity: 0.75;
-}
-
 .tierrow {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.startrow {
-  margin-top: 16px;
-  align-items: center;
+.champpanel .panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.champline {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.startbtn {
+  width: 100%;
+  font-size: 16px;
+  min-height: 76px;
 }
 
 .bigbtn {
@@ -156,48 +184,85 @@ body.desktop {
 }
 
 .hint {
-  font-size: 10px;
-  line-height: 1.8;
-  opacity: 0.75;
+  font-size: 9px;
+  line-height: 1.9;
+  opacity: 0.7;
   margin: 8px 0 0;
 }
 
-/* --------------------------------------------------------------- fight --- */
-#screen-fight {
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
+.hint.center {
+  text-align: center;
+  margin: 0;
 }
 
-.canvaswrap {
+/* --------------------------------------------------------------- fight --- */
+/* Full bleed. The canvas keeps its 16:9 pixel grid and letterboxes itself
+   rather than stretching, so nothing is ever resampled off the pixel grid. */
+#screen-fight {
   position: relative;
-  width: 100%;
-  max-width: 1280px;
-  aspect-ratio: 960 / 540;
+  background: #000;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 #fightcanvas {
   width: 100%;
   height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
   display: block;
-  border: 4px solid var(--edge);
 }
 
-.fightchrome {
+/* Bottom-left, out of the way of the P1 name panel in the HUD band. */
+.quitbtn {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  z-index: 20;
+  opacity: 0.4;
+}
+
+.quitbtn:hover {
+  opacity: 1;
+}
+
+.resultcard {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 7, 20, 0.88);
 }
 
-.devopenrow {
+.resultinner {
+  padding: 40px 56px;
+  text-align: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 520px;
+}
+
+.resulttitle {
+  font-size: 34px;
+  color: var(--p1);
+}
+
+.resultscore {
+  font-size: 52px;
+  letter-spacing: 0.1em;
+}
+
+.resultbtns {
+  display: flex;
+  gap: 14px;
+  margin-top: 14px;
 }
 
 .debugpane {
@@ -214,4 +279,25 @@ body.desktop {
   font-size: 9px;
   max-height: 220px;
   overflow: auto;
+  margin: 0;
+}
+
+@media (max-height: 800px) {
+  .qrbox {
+    width: 230px;
+    height: 230px;
+  }
+  .roomcode {
+    font-size: 34px;
+  }
+  .seatcard {
+    padding: 14px;
+  }
+  .seatcard h3 {
+    font-size: 18px;
+  }
+  .startbtn {
+    min-height: 60px;
+    font-size: 13px;
+  }
 }

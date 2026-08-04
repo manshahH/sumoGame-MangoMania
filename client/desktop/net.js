@@ -56,6 +56,7 @@ export function createHostNet(handlers = {}) {
   })
 
   socket.on('input', (msg) => handlers.onInput?.(msg))
+  socket.on('ready', (msg) => handlers.onReady?.(msg))
 
   net.start = () => socket.emit('host:start')
   net.toLobby = () => socket.emit('host:lobby')

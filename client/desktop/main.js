@@ -1,6 +1,6 @@
-// Desktop: the ring. Owns the lobby screen, the authoritative match loop, and
-// everything winner-stays-on. Phones never render a single pixel of the
-// fight - they only send input intents and receive their own HUD slice.
+// Desktop: the ring. Owns the lobby, the ready gate, the authoritative
+// best-of-3 match loop, and the result screen. Phones never render a pixel of
+// the fight - they send input intents and receive their own HUD slice.
 
 import { CONFIG, SEATS, SEAT_LABELS } from '/shared/config.js'
 import { createEngine } from '/shared/engine.js'
@@ -12,6 +12,7 @@ import { createRenderer } from './render.js'
 
 const $ = (sel) => document.querySelector(sel)
 const params = new URLSearchParams(location.search)
+const TIER_KEY = 'sumotime.tier.v1'
 
 const app = {
   screen: 'lobby',
@@ -19,14 +20,14 @@ const app = {
   room: null,
   debug: params.has('debug'),
   sound: true,
-  botTier: localStorage.getItem('sumotime.tier.v1') || CONFIG.bots.defaultTier,
+  botTier: localStorage.getItem(TIER_KEY) || CONFIG.bots.defaultTier,
   streak: loadStreak(),
 }
 
 function loadStreak() {
   try {
     const raw = localStorage.getItem(CONFIG.streak.storageKey)
-    if (raw) return JSON.parse(raw)
+    if (raw) return { ...createStreak(), ...JSON.parse(raw) }
   } catch {
     /* ignore corrupt storage */
   }
@@ -36,32 +37,53 @@ function saveStreak() {
   localStorage.setItem(CONFIG.streak.storageKey, JSON.stringify(app.streak))
 }
 
-// ------------------------------------------------------------- screens -----
 const SCREENS = ['lobby', 'fight']
 function showScreen(name) {
   app.screen = name
   for (const s of SCREENS) $(`#screen-${s}`)?.classList.toggle('hidden', s !== name)
-  $('#btn-lobby')?.classList.toggle('hidden', name !== 'fight')
 }
 
 // --------------------------------------------------------------- lobby -----
 function renderLobby(lobby) {
   app.lobby = lobby
-  const wrap = $('#seatcards')
-  if (!wrap) return
   const stations = lobby?.stations || {}
-  wrap.innerHTML = SEATS.map((seat) => {
-    const s = stations[seat] || { owner: 'bot', name: 'BOT' }
-    const cls = s.owner === 'human' ? 'claimed' : 'botted'
-    return `
-      <div class="pixelpanel seatcard ${cls}">
-        <h3 class="${seat}text">${SEAT_LABELS[seat]}</h3>
-        <div class="label dim">${s.owner === 'human' ? 'PLAYER' : 'CPU FIGHTER'}</div>
-        <div class="owner ${s.owner === 'human' ? 'goodtext' : 'dim'}">${s.owner === 'human' ? s.name : 'BOT'}</div>
-      </div>`
-  }).join('')
+  const wrap = $('#seatcards')
+  if (wrap) {
+    wrap.innerHTML = SEATS.map((seat) => {
+      const s = stations[seat] || { owner: 'bot' }
+      const human = s.owner === 'human'
+      return `
+        <div class="pixelpanel seatcard ${human ? 'claimed' : ''}">
+          <h3 class="${seat}text">${SEAT_LABELS[seat]}</h3>
+          <div class="label dim">${human ? 'PLAYER' : 'CPU FIGHTER'}</div>
+          <div class="who ${human ? 'goodtext' : 'dim'}">${human ? s.name : 'BOT — SCAN TO TAKE THIS SEAT'}</div>
+        </div>`
+    }).join('')
+  }
 
-  $('#champbanner').textContent = app.streak.streak > 0 ? `CHAMPION: ${app.streak.championName} — STREAK ${app.streak.streak} (BEST ${app.streak.best})` : 'NO CHAMPION YET'
+  const humans = SEATS.filter((s) => stations[s]?.owner === 'human').length
+  const note = $('#startnote')
+  if (note) {
+    note.textContent =
+      humans === 0
+        ? 'Nobody has joined yet — starting now runs a bot-vs-bot demo match.'
+        : humans === 1
+          ? 'One player vs the bot. A second phone can still claim the open seat.'
+          : 'Two players. Both phones will be asked to ready up.'
+  }
+  renderChampion()
+}
+
+function renderChampion() {
+  const body = $('#champbody')
+  if (!body) return
+  const s = app.streak
+  body.innerHTML = s.streak > 0
+    ? `<div class="champline p1text">CHAMPION · ${s.championName}</div>
+       <div class="champline">CURRENT STREAK · ${s.streak}</div>
+       <div class="champline dim">SESSION BEST · ${s.best} (${s.bestName || '—'})</div>`
+    : `<div class="champline dim">NO CHAMPION YET — WIN A MATCH TO TAKE THE RING</div>
+       <div class="champline dim">SESSION BEST · ${s.best || 0}${s.bestName ? ` (${s.bestName})` : ''}</div>`
 }
 
 function renderRoom(res) {
@@ -69,25 +91,8 @@ function renderRoom(res) {
   $('#roomcode').textContent = res.code
   $('#joinurl').textContent = res.url
   const qrbox = $('#qrbox')
-  if (res.qrSvg) qrbox.innerHTML = res.qrSvg
-  else qrbox.innerHTML = `<div class="label dim">QR UNAVAILABLE — TYPE THE URL</div>`
+  qrbox.innerHTML = res.qrSvg || `<div class="label" style="color:#140b1a">QR UNAVAILABLE<br />TYPE THE URL</div>`
   $('#lan-note').textContent = `LAN ${res.lan}:${res.port}`
-  renderDevButtons()
-}
-
-function renderDevButtons() {
-  const wrap = $('#devopen')
-  if (!wrap || !app.room) return
-  wrap.innerHTML = SEATS.map(
-    (s) => `<button class="pixelbtn" data-devseat="${s}">OPEN ${SEAT_LABELS[s]} CONTROLLER ↗</button>`
-  ).join('')
-  wrap.querySelectorAll('[data-devseat]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const seat = btn.dataset.devseat
-      const url = `/play?room=${app.room.code}&seat=${seat}&name=${SEAT_LABELS[seat]}`
-      window.open(url, `sumotime-${seat}`, 'width=430,height=880')
-    })
-  })
 }
 
 function renderTiers() {
@@ -95,11 +100,10 @@ function renderTiers() {
   row.innerHTML = Object.entries(CONFIG.bots.tiers)
     .map(([key, t]) => `<button class="pixelbtn ${key === app.botTier ? 'on' : ''}" data-tier="${key}">${t.label}</button>`)
     .join('')
-  $('#tierhint').textContent = 'Sets the difficulty for any seat a phone hasn’t claimed.'
   row.querySelectorAll('[data-tier]').forEach((btn) =>
     btn.addEventListener('click', () => {
       app.botTier = btn.dataset.tier
-      localStorage.setItem('sumotime.tier.v1', app.botTier)
+      localStorage.setItem(TIER_KEY, app.botTier)
       renderTiers()
     })
   )
@@ -115,46 +119,52 @@ const net = createHostNet({
   onStatus: setStatus,
   onRoom: renderRoom,
   onLobby: renderLobby,
-  onInput: (msg) => {
-    if (ring.engine) ring.engine.input(msg.seat, msg.input)
+  onInput: (msg) => ring.engine?.input(msg.seat, msg.input),
+  onReady: (msg) => {
+    if (!ring.engine) return
+    // Only honour a ready from whoever actually holds that seat right now.
+    if (ring.identity?.[msg.seat]?.id !== msg.playerId) return
+    ring.engine.setReady(msg.seat, msg.ready)
   },
 })
 
-// ------------------------------------------------------------ audio/gfx ----
 const audio = createAudio()
 let renderer = null
-let assets = null
 
 // --------------------------------------------------------------- ring ------
 const ring = {
   engine: null,
+  identity: null,
   names: { p1: 'P1', p2: 'P2' },
-  finalizing: false,
   raf: 0,
   lastT: 0,
   hudAccum: 0,
   prevCountdownCeil: null,
+  settled: false,
 }
 
 function seatIdentity(seat) {
-  const stations = app.lobby?.stations || {}
-  const s = stations[seat]
+  const s = app.lobby?.stations?.[seat]
   if (s && s.owner === 'human') return { kind: 'human', id: s.playerId, name: s.name }
-  return { kind: 'bot', id: `BOT:${seat}`, name: `BOT (${CONFIG.bots.tiers[app.botTier]?.label || app.botTier})` }
+  return { kind: 'bot', id: `BOT:${seat}`, name: `BOT ${CONFIG.bots.tiers[app.botTier]?.label || ''}`.trim() }
 }
 
 function beginMatch() {
   const p1 = seatIdentity('p1')
   const p2 = seatIdentity('p2')
-  ring.names = { p1: p1.name, p2: p2.name }
   ring.identity = { p1, p2 }
-  ring.finalizing = false
+  ring.names = { p1: p1.name, p2: p2.name }
   ring.prevCountdownCeil = null
+  ring.settled = false
+  // Every match opens on the ready gate: each human reads the rules on their
+  // phone and taps READY. Bots are ready the moment they sit down.
   ring.engine = createEngine({
     seed: `sumo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     seats: { p1: p1.kind, p2: p2.kind },
     botTiers: { p1: app.botTier, p2: app.botTier },
+    phase: 'ready',
   })
+  $('#resultcard').classList.add('hidden')
   showScreen('fight')
   audio.resume()
   if (!ring.raf) {
@@ -167,16 +177,27 @@ function buildHud(state) {
   const out = {}
   for (const seat of SEATS) {
     const f = state.fighters[seat]
+    const opp = state.fighters[seat === 'p1' ? 'p2' : 'p1']
+    const oppRadial = Math.hypot(opp.x - state.ring.cx, opp.y - state.ring.cy)
     out[seat] = {
+      phase: state.phase,
+      oppWeight: opp.weight,
+      oppNearEdge: oppRadial > state.ring.radius * 0.62,
+      round: state.round,
+      rounds: state.rounds,
+      roundsToWin: CONFIG.match.roundsToWin,
       weight: f.weight,
       combo: f.combo.count,
       parryReady: !f.parry && f.parryCooldown <= 0,
       parrying: !!f.parry,
-      phase: state.phase,
+      ready: !!ring.engine?.ready[seat],
+      opponent: ring.names[seat === 'p1' ? 'p2' : 'p1'],
       countdown: state.countdown,
-      timeLeft: Math.max(0, CONFIG.match.timeoutSeconds - state.timeSec),
-      won: state.phase === 'ended' && state.winner === seat,
-      endReason: state.endReason,
+      timeLeft: Math.max(0, CONFIG.match.roundSeconds - state.timeSec),
+      roundWinner: state.roundWinner,
+      wonRound: state.roundWinner === seat,
+      wonMatch: state.phase === 'matchEnd' && state.winner === seat,
+      endReason: state.endReason || state.roundReason,
     }
   }
   return out
@@ -188,33 +209,60 @@ function dispatchAudio(events) {
     else if (e.type === 'push') audio.cue.push()
     else if (e.type === 'parry') audio.cue.parry()
     else if (e.type === 'mango') audio.cue.mango()
-    else if (e.type === 'fightStart') {
+    else if (e.type === 'roundStart') {
       audio.cue.bell()
       audio.startLoop()
-    } else if (e.type === 'matchEnd') {
+    } else if (e.type === 'roundEnd') {
       audio.stopLoop()
       audio.cue.ringout()
-      setTimeout(() => audio.cue.cheer(), 250)
+    } else if (e.type === 'matchEnd') {
+      setTimeout(() => audio.cue.cheer(), 200)
     }
   }
 }
 
-function finalizeMatch(state) {
-  if (ring.finalizing) return
-  ring.finalizing = true
+/**
+ * Winner-stays-on, without ever ejecting the only human in the room.
+ *
+ * The loser's seat opens only when somebody is actually waiting for it - a
+ * connected player in the room holding no seat. With nobody queued, the loser
+ * keeps their seat and can rematch straight away, which is what stops a solo
+ * player being dropped into a bot-vs-bot match after one loss.
+ */
+function challengerWaiting() {
+  const players = app.lobby?.players || []
+  const seated = new Set(SEATS.map((s) => app.lobby?.stations?.[s]?.playerId).filter(Boolean))
+  return players.some((p) => p.connected && !seated.has(p.id))
+}
+
+function settleMatch(state) {
+  if (ring.settled) return
+  ring.settled = true
+
   const winnerSeat = state.winner
   const loserSeat = winnerSeat === 'p1' ? 'p2' : 'p1'
   const winner = ring.identity[winnerSeat]
-  recordWin(app.streak, winner.id, winner.name)
-  saveStreak()
-  net.clearSeat(loserSeat)
-  ring.nextMatchTimer = setTimeout(() => {
-    ring.nextMatchTimer = 0
-    // Re-resolve seats from the latest lobby (a new challenger may have
-    // claimed the open seat during the win screen) and go again - but only
-    // if nobody backed out to the lobby during the win screen.
-    if (app.screen === 'fight') beginMatch()
-  }, 1400)
+  const loser = ring.identity[loserSeat]
+
+  // Bots don't hold the ring - the leaderboard is for people.
+  if (winner.kind === 'human') {
+    recordWin(app.streak, winner.id, winner.name)
+    saveStreak()
+  }
+
+  const queued = challengerWaiting()
+  if (queued && loser.kind === 'human') net.clearSeat(loserSeat)
+
+  $('#result-title').textContent = `${winner.name} WINS`
+  $('#result-title').className = `resulttitle ${winnerSeat}text`
+  $('#result-score').textContent = `${state.rounds[winnerSeat]} — ${state.rounds[loserSeat]}`
+  $('#result-streak').textContent =
+    winner.kind === 'human' ? `STREAK ${app.streak.streak} · SESSION BEST ${app.streak.best}` : 'THE BOT HOLDS THE RING'
+  $('#result-next').textContent = queued
+    ? 'CHALLENGER SEAT OPEN — NEXT PLAYER, CLAIM IT ON YOUR PHONE'
+    : 'PLAY AGAIN KEEPS THE SAME SEATS'
+  $('#resultcard').classList.remove('hidden')
+  renderChampion()
 }
 
 function loop(now) {
@@ -226,14 +274,14 @@ function loop(now) {
   const state = ring.engine.state
   if (state.phase === 'countdown') {
     const c = Math.ceil(state.countdown)
-    if (ring.prevCountdownCeil !== null && c < ring.prevCountdownCeil && c >= 0) audio.cue.countdown()
+    if (ring.prevCountdownCeil !== null && c < ring.prevCountdownCeil && c > 0) audio.cue.countdown()
     ring.prevCountdownCeil = c
   }
 
   const events = ring.engine.tick(dt)
   dispatchAudio(events)
   renderer.handleEvents(events, state)
-  renderer.draw(state, dt, { names: ring.names, streak: app.streak })
+  renderer.draw(state, dt, { names: ring.names, streak: app.streak, ready: ring.engine.ready })
 
   ring.hudAccum += dt
   if (ring.hudAccum >= 1 / CONFIG.netHz) {
@@ -241,8 +289,7 @@ function loop(now) {
     net.sendHud(buildHud(state))
   }
 
-  if (state.phase === 'ended' && state.endHold <= 0) finalizeMatch(state)
-
+  if (state.phase === 'matchEnd' && state.holdT <= 0) settleMatch(state)
   if (app.debug) renderDebug(state)
 }
 
@@ -252,8 +299,11 @@ function renderDebug(state) {
   el.textContent = JSON.stringify(
     {
       phase: state.phase,
-      time: state.timeSec.toFixed(1),
-      ring: state.ring.radius.toFixed(0),
+      round: state.round,
+      rounds: state.rounds,
+      t: state.timeSec.toFixed(1),
+      ringR: state.ring.radius.toFixed(0),
+      ready: ring.engine?.ready,
       p1: { w: state.fighters.p1.weight.toFixed(0), combo: state.fighters.p1.combo.count },
       p2: { w: state.fighters.p2.weight.toFixed(0), combo: state.fighters.p2.combo.count },
       winner: state.winner,
@@ -263,19 +313,31 @@ function renderDebug(state) {
   )
 }
 
+function backToLobby() {
+  cancelAnimationFrame(ring.raf)
+  ring.raf = 0
+  ring.engine = null
+  audio.stopLoop()
+  $('#resultcard').classList.add('hidden')
+  net.toLobby()
+  showScreen('lobby')
+  renderChampion()
+}
+
 // -------------------------------------------------------------- chrome -----
 function wireChrome() {
   $('#btn-sound').addEventListener('click', (e) => {
     app.sound = !app.sound
     e.currentTarget.textContent = app.sound ? 'SND ON' : 'SND OFF'
-    e.currentTarget.classList.toggle('on', app.sound)
     audio.setEnabled(app.sound)
   })
-
-  $('#btn-debug').addEventListener('click', () => toggleDebug())
-  $('#btn-tolobby').addEventListener('click', () => backToLobby())
-  $('#btn-lobby').addEventListener('click', () => backToLobby())
-
+  $('#btn-debug').addEventListener('click', toggleDebug)
+  $('#btn-lobby').addEventListener('click', backToLobby)
+  $('#btn-result-lobby').addEventListener('click', backToLobby)
+  $('#btn-again').addEventListener('click', () => {
+    net.start()
+    beginMatch()
+  })
   $('#btn-start').addEventListener('click', () => {
     net.start()
     beginMatch()
@@ -284,6 +346,7 @@ function wireChrome() {
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return
     if (e.key === 'd' || e.key === 'D') toggleDebug()
+    if (e.key === 'Escape' && app.screen === 'fight') backToLobby()
   })
 
   const unlock = () => {
@@ -293,32 +356,17 @@ function wireChrome() {
   window.addEventListener('pointerdown', unlock)
 }
 
-function backToLobby() {
-  cancelAnimationFrame(ring.raf)
-  ring.raf = 0
-  ring.engine = null
-  if (ring.nextMatchTimer) {
-    clearTimeout(ring.nextMatchTimer)
-    ring.nextMatchTimer = 0
-  }
-  audio.stopLoop()
-  net.toLobby()
-  showScreen('lobby')
-}
-
 function toggleDebug() {
   app.debug = !app.debug
   $('#debug')?.classList.toggle('hidden', !app.debug)
 }
 
-// ---------------------------------------------------------------- boot -----
 async function boot() {
-  assets = await loadAssets()
-  const canvas = $('#fightcanvas')
-  renderer = createRenderer(canvas, assets)
-
+  const assets = await loadAssets()
+  renderer = createRenderer($('#fightcanvas'), assets)
   wireChrome()
   renderTiers()
+  renderChampion()
   if (app.debug) $('#debug')?.classList.remove('hidden')
   showScreen('lobby')
 

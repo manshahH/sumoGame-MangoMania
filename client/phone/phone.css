@@ -1,19 +1,23 @@
+html,
 body.phone {
-  min-height: 100dvh;
+  height: 100%;
+  overflow: hidden;
+}
+
+body.phone {
   display: flex;
   flex-direction: column;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
   touch-action: manipulation;
   user-select: none;
-  overflow: hidden;
 }
 
 #phonetop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-bottom: 4px solid var(--edge);
   background: var(--panel);
   flex: none;
@@ -21,7 +25,6 @@ body.phone {
 
 #p-title {
   font-size: 11px;
-  letter-spacing: 0.1em;
 }
 
 .pscreen {
@@ -30,7 +33,7 @@ body.phone {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   overflow-y: auto;
 }
 
@@ -38,8 +41,8 @@ body.phone {
 .seatrow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
+  gap: 12px;
+  padding: 16px;
 }
 
 .seatrow.mine {
@@ -52,56 +55,164 @@ body.phone {
 }
 
 .seatrow h3 {
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .seatrow .sblurb {
   font-size: 9px;
-  line-height: 1.6;
-  margin-top: 6px;
+  line-height: 1.7;
+  margin-top: 8px;
   opacity: 0.75;
 }
 
 .seatrow .pixelbtn {
-  min-width: 110px;
+  min-width: 116px;
   flex: none;
+}
+
+/* --------------------------------------------------------- rules card --- */
+/* Shown before every match, after the seat is already claimed. This is the
+   only place the three actions are explained, so it has to be readable at a
+   glance by somebody who has never seen the game. */
+#p-screen-rules {
+  justify-content: space-between;
+}
+
+.rulescard {
+  padding: 18px;
+}
+
+.rulesgoal {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--p1);
+  margin-bottom: 16px;
+}
+
+.rulerow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 3px solid var(--edge);
+}
+
+.rulekey {
+  width: 62px;
+  flex: none;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #0c0714;
+  border: 3px solid var(--edge);
+}
+
+.rulekey.a {
+  background: #ef6b6b;
+}
+.rulekey.b {
+  background: #58b6f0;
+}
+.rulekey.ab {
+  background: var(--good);
+  font-size: 10px;
+}
+
+.ruletext {
+  font-size: 10px;
+  line-height: 1.8;
+  flex: 1;
+}
+
+.ruletext b {
+  color: var(--ink);
+}
+
+.readybar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#btn-ready {
+  width: 100%;
+  min-height: 86px;
+  font-size: 18px;
+}
+
+.waitline {
+  text-align: center;
+  font-size: 9px;
+  line-height: 1.8;
 }
 
 /* -------------------------------------------------------------- fight -- */
 #p-screen-play {
   padding: 8px;
   gap: 8px;
+  overflow: hidden;
 }
 
 .fighthud {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 .hudrow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.hudrow .label {
-  width: 74px;
+/* The bars are the point of the row - let them take every spare pixel. */
+.hudrow .pixelbar {
+  flex: 1;
+  min-width: 0;
+}
+
+.hudrow .seatname {
+  font-size: 12px;
   flex: none;
+  width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roundpips {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.pip {
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid var(--edge);
+}
+
+.pip.won {
+  background: var(--p1);
 }
 
 .hudnum {
-  font-size: 10px;
-  width: 34px;
+  font-size: 11px;
   flex: none;
+  min-width: 30px;
   text-align: right;
 }
 
 .combochip {
-  font-size: 10px;
-  padding: 3px 8px;
+  font-size: 9px;
+  padding: 4px 8px;
   background: var(--panel-hi);
   border: 2px solid var(--edge);
   flex: none;
@@ -117,12 +228,39 @@ body.phone {
   align-items: center;
   gap: 6px;
   flex: none;
+  font-size: 9px;
 }
 
+.pixelbar.opp > .fill {
+  background: #8a6fa8;
+}
+
+/* One line telling you the single thing worth doing right now. A stranger who
+   has read nothing can still act on it. */
+.pushhint {
+  font-size: 9px;
+  line-height: 1.7;
+  text-align: center;
+  padding: 8px 6px 2px;
+  border-top: 3px solid var(--edge);
+  color: #c9b8d6;
+}
+
+.pushhint.go {
+  color: var(--good);
+}
+
+/* The pad owns everything below the HUD and pins itself to the BOTTOM of the
+   screen, because that is where thumbs are when a phone is held two-handed. */
+/* Pinned to the bottom of the screen and capped in height: thumbs sit at the
+   bottom of a phone, and a control surface taller than a thumb's arc just
+   spreads the buttons out of reach of each other. */
 .padwrap {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  margin-top: auto;
+  height: min(56vh, 400px);
   display: flex;
+  align-items: stretch;
   gap: 8px;
 }
 
@@ -133,22 +271,26 @@ body.phone {
   align-items: center;
   justify-content: center;
   touch-action: none;
-  background: rgba(0, 0, 0, 0.2);
-  border: 4px solid var(--edge);
+  background: rgba(0, 0, 0, 0.3);
+  /* A near-black border on a near-black page is invisible - this zone needs to
+     read as a physical control surface, so it gets a lit edge. */
+  border: 4px solid #3a2350;
 }
 
-.joyhint {
+.padlabel {
   position: absolute;
   bottom: 8px;
   left: 0;
   right: 0;
   text-align: center;
+  font-size: 8px;
+  opacity: 0.55;
   pointer-events: none;
 }
 
 .joybase {
-  width: 130px;
-  height: 130px;
+  width: 178px;
+  height: 178px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 35%, #3a2350, #150b21);
   border: 4px solid var(--edge);
@@ -159,12 +301,12 @@ body.phone {
 }
 
 .joyknob {
-  width: 56px;
-  height: 56px;
+  width: 82px;
+  height: 82px;
   border-radius: 50%;
   background: var(--p1);
-  border: 3px solid var(--edge);
-  box-shadow: 0 0 12px rgba(255, 206, 84, 0.7);
+  border: 4px solid var(--edge);
+  box-shadow: 0 0 16px rgba(255, 206, 84, 0.6);
   transition: transform 0.03s linear;
 }
 
@@ -172,54 +314,78 @@ body.phone {
   flex: 1;
   position: relative;
   touch-action: none;
+  background: rgba(0, 0, 0, 0.3);
+  border: 4px solid #3a2350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+/* The two buttons are diagonally adjacent and their corners nearly touch, so
+   one thumb can roll from A onto B and hold both. That roll IS the parry -
+   spread them apart and the mechanic becomes unreachable. */
+.btncluster {
+  position: relative;
+  width: min(200px, 100%);
+  aspect-ratio: 1;
+}
+
+/* B above, A below, offset on a diagonal and close enough that one thumb can
+   roll across both to parry. */
+/* Sized as a fraction of the cluster so the two always overlap on the diagonal
+   no matter how narrow the phone is. */
 .arcadebtn {
   position: absolute;
-  width: 92px;
-  height: 92px;
+  width: 62%;
+  aspect-ratio: 1;
   border-radius: 50%;
   font-family: 'Press Start 2P', monospace;
-  font-size: 20px;
+  font-size: 26px;
   color: #0c0714;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border: 4px solid var(--edge);
-  box-shadow: 4px 4px 0 var(--shadow);
+  gap: 6px;
+  border: 5px solid var(--edge);
+  box-shadow: 5px 5px 0 var(--shadow);
   cursor: pointer;
   user-select: none;
   transition: transform 0.05s linear, box-shadow 0.05s linear;
 }
 
 .arcadebtn .btnsub {
-  font-size: 8px;
+  font-size: 9px;
+}
+
+/* B sits high-right, A sits low-left of it: A is the button you press most, so
+   it gets the shorter, more natural thumb reach. */
+.arcadebtn.bbtn {
+  top: 0;
+  right: 0;
+  background: radial-gradient(circle at 35% 30%, #8ad4ff, #2e8fd4);
 }
 
 .arcadebtn.abtn {
-  top: 4%;
-  right: 6%;
+  bottom: 0;
+  left: 0;
   background: radial-gradient(circle at 35% 30%, #ff8a8a, #d43a3a);
-}
-
-.arcadebtn.bbtn {
-  bottom: 4%;
-  left: 6%;
-  background: radial-gradient(circle at 35% 30%, #8ad4ff, #2e8fd4);
 }
 
 .arcadebtn.held,
 .arcadebtn:active {
-  transform: translate(3px, 3px);
+  transform: translate(4px, 4px);
   box-shadow: 1px 1px 0 var(--shadow);
-  filter: brightness(1.15);
+  filter: brightness(1.2);
 }
 
-/* -------------------------------------------------------------- idle ---- */
+.btnzone.parryglow .arcadebtn {
+  box-shadow: 5px 5px 0 var(--shadow), 0 0 18px rgba(125, 255, 138, 0.55);
+}
+
+/* -------------------------------------------------------------- misc ---- */
 .idlecard {
-  padding: 20px;
+  padding: 24px;
   text-align: center;
 }
 
@@ -244,16 +410,16 @@ body.phone {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 10px;
-  background: rgba(12, 7, 20, 0.85);
+  background: rgba(12, 7, 20, 0.86);
   pointer-events: none;
 }
 
 .matchflash .big {
-  font-size: 26px;
+  font-size: 28px;
   text-align: center;
-  animation: flashpop 0.4s ease-out;
+  padding: 0 20px;
+  line-height: 1.6;
+  animation: flashpop 0.35s ease-out;
 }
 
 @keyframes flashpop {
@@ -263,9 +429,27 @@ body.phone {
   }
 }
 
+/* Short phones: shrink the controls rather than letting them overflow. */
+@media (max-height: 680px) {
+  .joybase {
+    width: 142px;
+    height: 142px;
+  }
+  .joyknob {
+    width: 68px;
+    height: 68px;
+  }
+  .btncluster {
+    width: min(168px, 100%);
+  }
+  .arcadebtn {
+    font-size: 22px;
+  }
+}
+
 @media (min-width: 700px) {
   .pscreen {
-    max-width: 640px;
+    max-width: 680px;
     width: 100%;
     margin: 0 auto;
   }

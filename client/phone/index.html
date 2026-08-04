@@ -35,31 +35,55 @@
     <!-- ============================= JOIN ============================= -->
     <main id="p-screen-join" class="pscreen">
       <div class="pixelpanel">
-        <div style="padding: 14px" class="col">
+        <div style="padding: 16px" class="col">
           <label class="label" for="in-room">ROOM CODE</label>
           <input id="in-room" class="pixelinput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
-          <label class="label" for="in-name" style="margin-top: 8px">YOUR NAME</label>
+          <label class="label" for="in-name" style="margin-top: 10px">YOUR NAME</label>
           <input id="in-name" class="pixelinput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CHALLENGER" />
-          <button class="pixelbtn on" id="btn-join" style="margin-top: 10px">ENTER THE RING</button>
+          <button class="pixelbtn on" id="btn-join" style="margin-top: 14px; min-height: 72px">ENTER THE RING</button>
           <div class="label warntext" id="joinerr"></div>
-          <p class="label dim" style="line-height: 1.7; margin-top: 6px">
-            THE DESKTOP SHOWS THE ROOM CODE AND A QR. SAME WIFI AS THE SCREEN.
-          </p>
         </div>
       </div>
     </main>
 
     <!-- ============================ LOBBY ============================= -->
     <main id="p-screen-lobby" class="pscreen hidden">
-      <div class="col" style="gap: 10px">
-        <div class="label dim" id="lobbyhint">CLAIM A SEAT. AN OPEN SEAT IS FLOWN BY A BOT.</div>
-        <div id="p-seats" class="col" style="gap: 10px"></div>
-        <div class="pixelpanel">
-          <div style="padding: 12px">
-            <div class="label dim" id="p-waiting">WAITING FOR THE RING TO START…</div>
-          </div>
+      <div class="label dim">CLAIM A SEAT. AN OPEN SEAT IS FOUGHT BY THE BOT.</div>
+      <div id="p-seats" class="col" style="gap: 12px"></div>
+      <div class="pixelpanel">
+        <div style="padding: 14px">
+          <div class="label dim" id="p-waiting">WAITING FOR THE RING TO START…</div>
         </div>
-        <button class="pixelbtn danger" id="btn-leave" style="margin-top: 4px">LEAVE ROOM</button>
+      </div>
+      <button class="pixelbtn danger" id="btn-leave">LEAVE ROOM</button>
+    </main>
+
+    <!-- ============================= RULES ============================ -->
+    <main id="p-screen-rules" class="pscreen hidden">
+      <div class="pixelpanel rulescard">
+        <div class="rulesgoal" id="rules-goal">PUSH YOUR OPPONENT OUT OF THE RING.<br />BEST OF 3 ROUNDS.</div>
+
+        <div class="rulerow">
+          <div class="rulekey a">A</div>
+          <div class="ruletext"><b>HIT</b> — fast jab. Chips their weight so they get easier to shove.</div>
+        </div>
+        <div class="rulerow">
+          <div class="rulekey b">B</div>
+          <div class="ruletext"><b>PUSH</b> — slow but huge. This is what throws them out. Miss it and you’re wide open.</div>
+        </div>
+        <div class="rulerow">
+          <div class="rulekey ab">A+B</div>
+          <div class="ruletext"><b>PARRY</b> — hold both. Blocks their blow, staggers them, and wins you a mango that restores weight.</div>
+        </div>
+        <div class="rulerow">
+          <div class="rulekey" style="background: var(--p1)">▲</div>
+          <div class="ruletext"><b>WEIGHT</b> is your health and your mass. Heavy shoves harder, light runs faster. The ring shrinks — don’t stall.</div>
+        </div>
+      </div>
+
+      <div class="readybar">
+        <button class="pixelbtn on" id="btn-ready">I’M READY</button>
+        <div class="waitline dim" id="readyline">TAP READY WHEN YOU’VE READ THIS</div>
       </div>
     </main>
 
@@ -67,28 +91,34 @@
     <main id="p-screen-play" class="pscreen hidden">
       <div class="fighthud pixelpanel">
         <div class="hudrow">
-          <span class="label" id="hud-seatlabel">P1</span>
+          <span class="seatname" id="hud-seatlabel">P1</span>
+          <div class="roundpips" id="hud-pips"></div>
           <div class="pixelbar" id="hud-weightbar"><div class="fill"></div></div>
           <span class="hudnum" id="hud-weightnum">100</span>
         </div>
+        <div class="hudrow">
+          <span class="seatname dim" id="hud-opplabel">VS</span>
+          <div class="pixelbar opp" id="hud-oppbar"><div class="fill"></div></div>
+          <span class="hudnum dim" id="hud-oppnum">100</span>
+        </div>
         <div class="hudrow spread">
-          <div class="row">
-            <div class="parrylight"><span class="led" id="hud-parrylight"></span><span class="label">PARRY</span></div>
+          <div class="row" style="gap: 10px">
+            <div class="parrylight"><span class="led" id="hud-parrylight"></span><span>PARRY</span></div>
             <span class="combochip" id="hud-combo">COMBO 0</span>
           </div>
-          <span class="label dim" id="hud-clock">00:00</span>
+          <span class="label dim" id="hud-clock">0:00</span>
         </div>
+        <div class="pushhint" id="hud-pushhint">SOFTEN THEM UP WITH A</div>
       </div>
-      <div id="p-pad"></div>
+      <div id="p-pad" style="display: contents"></div>
     </main>
 
     <!-- ============================= IDLE ============================= -->
     <main id="p-screen-idle" class="pscreen hidden">
       <div class="pixelpanel idlecard">
-        <h3 style="margin-bottom: 12px">WAITING</h3>
-        <p class="label dim" style="line-height: 1.7">
-          THE RING IS TAKEN. UNCLAIMED SEATS ARE FLOWN BY A BOT.<br />WAIT FOR THE MATCH TO END,
-          THEN CLAIM A SEAT.
+        <h3 style="margin-bottom: 14px">WAITING</h3>
+        <p class="label dim" style="line-height: 1.9">
+          BOTH SEATS ARE TAKEN.<br />WHEN A MATCH ENDS, THE LOSER’S SEAT OPENS AND YOU CAN CLAIM IT.
         </p>
       </div>
     </main>
