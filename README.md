@@ -219,11 +219,20 @@ socket and the phones' sockets can find each other. Vercel's WebSocket support i
 and their own docs are explicit that *"future connections are not guaranteed to connect to the same
 Function"*, with a default connection cap of 5 minutes (30 on Pro/Enterprise, beta only).
 
-Neither of those is a fit for what this app does. In practice it held up better than the docs
-suggest — 12/12 phone joins reached the room, input relayed correctly, and a full match played
-through — but the failure mode when it does bite is nasty and silent: a phone lands on a different
-instance, finds an empty room registry, and gets `NO SUCH ROOM` for a room that is plainly on the
-screen in front of them.
+Neither of those is a fit for what this app does. Measured against the live deploy, it held up
+better than the docs promise:
+
+| Probe | Result |
+| --- | --- |
+| Phone joins reaching the room | 12 / 12 |
+| Input relay (phone joystick → host sim) | works |
+| Full match: ready-up → rounds → result | works |
+| Host + phone sockets held open | no drops over 8 minutes |
+
+But none of that is *guaranteed* by the platform, and the failure mode when it does bite is nasty
+and silent: a phone lands on a different instance, finds an empty room registry, and gets
+`NO SUCH ROOM` for a room code that is plainly on the screen in front of them. A quiet evening on
+a warm instance is exactly when this looks fine.
 
 So:
 
