@@ -30,9 +30,15 @@ join screen, and claims **P1** or **P2**. Whichever seat nobody claims is fought
 
 ### Solo testing without a second device
 
-The lobby has an **OPEN P1 / P2 CONTROLLER** button that opens a phone controller in a new browser
-tab on the same computer. Open both and you can referee a full match, human vs human, from one
-machine - or open just one and leave the other seat for the bot.
+Open a controller directly in a second browser tab:
+
+```
+http://localhost:4321/play?room=<ROOM CODE>&seat=p1&name=ALICE
+http://localhost:4321/play?room=<ROOM CODE>&seat=p2&name=BOB
+```
+
+`seat` and `name` are optional - without them you just get the normal join screen. Open one tab and
+leave the other seat to the bot, or open both and referee a human-vs-human match from one machine.
 
 ### Self-tests
 
@@ -45,18 +51,26 @@ exact same `runSelfTests()` suite in `shared/selftests.js` - deterministic, no D
 It covers: the weight → speed/push-resistance curves, knockback weight-ratio scaling, ring-out
 detection, the A / B / A+B input resolver (including the grace-window parry upgrade), parry
 cancel/punish/mango, weight floor/cap clamping, combo + milestone mango + parry breaking a combo,
-ring-out and timeout match endings (with the weight-then-center tiebreak), the winner-stays-on
-streak, and a headless bot-vs-bot match that must terminate legally within the max match time.
+round endings (with the weight-then-center tiebreak), the best-of-3 round tally and per-round
+reset, the ready gate, the winner-stays-on streak, a headless bot-vs-bot match that must terminate
+legally, and — after a bug where it wasn't true — that **bots actually land hits and pushes**.
 
 ---
 
 ## How to play
 
+A match is **best of 3 rounds**. Before every match each player gets a rules card on their phone
+and taps **READY** - that's separate from claiming a seat, and nobody fights until both are ready.
+
+Controls live at the **bottom** of the phone, where thumbs actually are:
+
 - **Left thumb:** joystick, moves you around the ring. You always face your opponent automatically
   - there's no aiming, so it's pick-up-and-play for a stranger at an event.
-- **Right thumb, two big buttons on a diagonal:**
-  - **A (upper-right) = HIT** - fast, short range, chips a little weight and stuns.
-  - **B (lower-left) = PUSH** - slower to throw and to recover from, but a big knockback scaled by
+- **Right thumb, two big buttons offset on a diagonal, close enough that one thumb can roll across
+  both:**
+  - **A (lower) = HIT** - fast, short range, chips a little weight and stuns. It's the button you
+    press most, so it gets the shorter reach.
+  - **B (upper) = PUSH** - slower to throw and to recover from, but a big knockback scaled by
     the weight gap between you and your opponent. This is your ring-out finisher; whiffing it
     leaves you open.
   - **Hold A + B together = PARRY.** The detector treats *holding both* as a brace rather than
@@ -72,13 +86,18 @@ speeds you up; a well-timed parry claws weight back. That's the built-in comebac
 shrinking underdog is fast and hard to corner, while the bloated leader is slow and easy to slip
 past.
 
-**Ring-out wins.** If the clock runs out with nobody pushed out, the heavier fighter wins the
-tiebreak; if weight is tied, whoever's closer to the center wins.
+**Ring-out wins the round.** If the clock runs out with nobody pushed out, the heavier fighter
+takes the round; if weight is tied, whoever's closer to the center. Weight and positions reset
+between rounds. First to 2 rounds takes the match.
 
 **Winner stays on.** The champion holds the ring and their win streak is tracked (shown on-screen
-and kept in the browser's `localStorage`); the loser's seat opens immediately for the next
-challenger to claim from their phone, and the next match starts automatically a couple of seconds
-after the win screen - no menu diving between bouts.
+and kept in the browser's `localStorage`). After a match you get a result screen with **PLAY
+AGAIN** or **LOBBY**.
+
+The loser's seat only opens up when somebody is actually waiting for it - a connected player in
+the room who isn't holding a seat. With nobody queued, the loser keeps their seat and can rematch
+straight away. That's deliberate: it means a solo player who loses to the bot is never ejected from
+their own seat and left watching two bots fight each other.
 
 ---
 
@@ -93,17 +112,19 @@ shared/           The game, with no DOM and no sockets - runs in the browser and
   roles.js        Two-seat lobby: claim/release/resolve P1 and P2, unclaimed -> bot.
   sim.js          The deterministic sumo sim: movement, weight, hit/push/parry resolution
                   (including the grace-window input resolver), combo, mango, body collision,
-                  ring-out, ring shrink, timeout tiebreak.
+                  ring-out, ring shrink, best-of-3 rounds, timeout tiebreak.
   bots.js         Bot AI - produces the same {move, a, b} input intents a phone would, through
                   the same setInput() path. Three tiers (reaction time, parry frequency).
-  engine.js       sim + bots, headless - what the desktop host and the self-tests both drive.
+  engine.js       sim + bots + the ready gate, headless - what the desktop host and the
+                  self-tests both drive.
   streak.js       Winner-stays-on champion streak, pure functions.
   selftests.js    runSelfTests() - the acceptance suite described above.
-client/desktop/   The ring: canvas renderer, sprite-sheet animation state machine, arena art,
-                  screen shake / hitstop / dust / sparks, synthesised SFX + chiptune, the lobby
-                  screen, bot difficulty picker, and the winner-stays-on match loop.
-client/phone/     The controller: joystick + diagonal A/B, the personal HUD, the join/lobby
-                  screens. Never renders the fight - immune to render and network jitter.
+client/desktop/   The ring: canvas renderer, sprite-sheet animation state machine, the
+                  procedurally drawn dohyo, screen shake / hitstop / dust / sparks, synthesised
+                  SFX + chiptune, the lobby, and the best-of-3 match loop.
+client/phone/     The controller: bottom-anchored joystick + diagonal A/B, the rules/ready card,
+                  the personal HUD, the join/lobby screens. Never renders the fight - immune to
+                  render and network jitter.
 client/shared/    The shared pixel-arcade CSS skin both clients pull from.
 assets/           Curated sprite sheets and arena art (see assets/README.md for the frame layout
                   and where CONFIG points at each file).
@@ -132,12 +153,16 @@ else.
       weight gap; ring-out wins
 - [x] Perfect parry cancels the blow, grants a mango and weight, and punishes the attacker; the
       active window (250ms) plus the 90ms grace window survive real network jitter
-- [x] Matches reliably end within ~45-50s thanks to the shrinking ring; winner-stays-on with a
-      visible streak
+- [x] Rounds reliably end inside 30s thanks to the shrinking ring; a full best-of-3 lands around
+      20-40s of fighting
+- [x] Winner-stays-on with a visible streak, and the loser is never ejected unless somebody is
+      queued for the seat
 - [x] Pixel-perfect rendering (nearest-neighbor, `image-rendering: pixelated`, no smoothing), the
       provided sprites animate through the state machine, mango pop on earn, and pushes carry
       screen shake, dust and a hitstop freeze
-- [x] `runSelfTests()` all-pass (54/54, `npm test` or `?test`)
+- [x] The dohyo is drawn from the live ring radius, so the boundary is exactly where a ring-out
+      happens and the shrink is visible
+- [x] `runSelfTests()` all-pass (79/79, `npm test` or `?test`)
 
 ---
 
