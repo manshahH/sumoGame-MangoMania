@@ -84,8 +84,35 @@ function createRoom(code, hostSocketId) {
   return room
 }
 
-function joinUrlFor(code) {
-  return `http://${getLanIp()}:${PORT}/play?room=${code}`
+/**
+ * The URL a phone should open to join.
+ *
+ * On a LAN this has to be the machine's LAN IP, because "localhost" means the
+ * phone itself. Behind a public host it has to be that host instead. The
+ * desktop tells us the origin it was actually loaded from, which is correct in
+ * both cases; PUBLIC_URL overrides for a proxied deploy, and the LAN IP is the
+ * fallback when neither is available.
+ */
+function joinUrlFor(code, origin) {
+  const base = process.env.PUBLIC_URL || usableOrigin(origin) || `http://${getLanIp()}:${PORT}`
+  return `${base}/play?room=${code}`
+}
+
+/**
+ * A desktop opened at localhost is the normal LAN case, and "localhost" on a
+ * phone means the phone itself - so that origin is useless in a QR code and we
+ * fall back to the LAN address. Any other origin is a real hostname the phone
+ * can actually reach.
+ */
+function usableOrigin(origin) {
+  if (!origin || !/^https?:\/\//.test(origin)) return null
+  try {
+    const { hostname } = new URL(origin)
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return null
+    return origin.replace(/\/$/, '')
+  } catch {
+    return null
+  }
 }
 
 function lobbyPayload(room) {
@@ -120,9 +147,9 @@ function hostSocket(room) {
 }
 
 /** Answer a host with everything it needs to put a join screen on the wall. */
-function ackRoom(room, ack) {
+function ackRoom(room, ack, origin) {
   if (typeof ack !== 'function') return
-  const url = joinUrlFor(room.code)
+  const url = joinUrlFor(room.code, origin)
   const base = { ok: true, code: room.code, url, port: PORT, lan: getLanIp(), lobby: lobbyPayload(room) }
   QRCode.toString(url, {
     type: 'svg',
@@ -145,7 +172,7 @@ io.on('connection', (socket) => {
   socket.on('host:create', (payload = {}, ack) => {
     const own = rooms.get(socket.data.room)
     if (own && own.hostSocketId === socket.id) {
-      ackRoom(own, ack)
+      ackRoom(own, ack, payload.origin)
       return
     }
 
@@ -168,7 +195,7 @@ io.on('connection', (socket) => {
     socket.data.room = room.code
     socket.join(room.code)
 
-    ackRoom(room, ack)
+    ackRoom(room, ack, payload.origin)
     broadcastLobby(room)
   })
 

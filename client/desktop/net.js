@@ -25,7 +25,10 @@ export function createHostNet(handlers = {}) {
     net.connected = true
     announce()
     const preferredCode = sessionStorage.getItem(ROOM_KEY) || localStorage.getItem(ROOM_KEY) || ''
-    socket.emit('host:create', { preferredCode }, (res) => {
+    // The desktop knows the address it was actually reached on, which is the
+    // only reliable way to build a join URL that works on a LAN and behind a
+    // public host alike.
+    socket.emit('host:create', { preferredCode, origin: location.origin }, (res) => {
       if (!res?.ok) return
       net.code = res.code
       net.url = res.url
