@@ -62,9 +62,13 @@ export function createPhoneNet(handlers = {}) {
   net.leave = () => {
     socket.emit('leave')
     net.joined = false
+    // Forget the room too. Otherwise the next socket reconnect silently walks
+    // straight back into the room the player just left.
+    net.room = null
   }
   net.sendInput = (seat, input) => socket.emit('input', { seat, input })
   net.setReady = (seat, ready) => socket.emit('ready', { seat, ready })
+  net.sendSkin = (seat, skin) => socket.emit('skin', { seat, skin })
 
   return net
 }

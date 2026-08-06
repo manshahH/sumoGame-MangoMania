@@ -37,98 +37,272 @@ body.phone {
   overflow-y: auto;
 }
 
-/* ------------------------------------------------------ lobby seats ---- */
-.seatrow {
+/* --------------------------------------------------------- step line ---- */
+/* The phone runs 1 -> 2 -> 3 and says so at the top of every step, so a
+   stranger handed a phone mid-queue knows where they are. */
+.stepline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #c9b8d6;
+}
+
+.stepnum {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #0c0714;
+  background: var(--p1);
+  border: 3px solid var(--edge);
+}
+
+/* ------------------------------------------------------- join screen ---- */
+#p-screen-join {
+  justify-content: center;
+}
+
+.joincard {
+  padding: 18px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The room arrived with the QR: shown as settled fact, tappable to correct. */
+.roomchip {
+  align-self: center;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 10px 16px;
+  background: #0c0714;
+  border: 3px solid var(--p1);
+  cursor: pointer;
 }
 
-.seatrow.mine {
-  border-color: var(--good);
-}
-
-.seatrow .sinfo {
-  flex: 1;
-  min-width: 0;
-}
-
-.seatrow h3 {
-  font-size: 18px;
-}
-
-.seatrow .sblurb {
+.rclabel {
   font-size: 9px;
-  line-height: 1.7;
-  margin-top: 8px;
-  opacity: 0.75;
+  color: #c9b8d6;
 }
 
-.seatrow .pixelbtn {
-  min-width: 116px;
+.rccode {
+  font-size: 22px;
+  letter-spacing: 0.22em;
+  color: var(--p1);
+}
+
+.joinfield {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pixelinput.big {
+  font-size: 22px;
+  padding: 16px 12px;
+}
+
+.fieldhint {
+  font-size: 8px;
+  line-height: 1.7;
+  color: #c9b8d6;
+  opacity: 0.7;
+}
+
+.joinbtn {
+  min-height: 78px;
+  font-size: 15px;
+}
+
+/* ------------------------------------------------------ lobby seats ----
+   Two slabs, P1 gold and P2 blue, each the whole tap target. Nothing to read
+   before you can act: the seat, who is in it, and what a tap does. */
+.seatpick {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.seatcard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+  font-family: 'Press Start 2P', monospace;
+  color: var(--ink);
+  background: var(--panel);
+  border: 4px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  cursor: pointer;
+  transition: transform 0.05s linear, box-shadow 0.05s linear;
+}
+
+.seatcard:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+.seatcard .scseat {
+  font-size: 17px;
+}
+
+.seatcard.p1 .scseat {
+  color: var(--p1);
+}
+
+.seatcard.p2 .scseat {
+  color: var(--p2);
+}
+
+.seatcard .scwho {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.seatcard .scact {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  opacity: 0.65;
+}
+
+/* Yours: green edge, and the whole slab reads as claimed. */
+.seatcard.mine {
+  border-color: var(--good);
+  background: #1b3320;
+}
+
+.seatcard.mine .scwho {
+  color: var(--good);
+}
+
+.seatcard.taken {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------- lobby status --- */
+.statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+}
+
+.statusbar .label {
+  line-height: 1.8;
+}
+
+.lobbyfoot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* --------------------------------------------------------- rules card --- */
 /* Shown before every match, after the seat is already claimed. This is the
-   only place the three actions are explained, so it has to be readable at a
-   glance by somebody who has never seen the game. */
+   character select: pick a wrestler, tap READY. The one line of controls at
+   the bottom is the only text - nobody at a party reads paragraphs. */
 #p-screen-rules {
   justify-content: space-between;
 }
 
-.rulescard {
-  padding: 18px;
-}
-
-.rulesgoal {
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--p1);
-  margin-bottom: 16px;
-}
-
-.rulerow {
+.selectcard {
+  padding: 16px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
-  padding: 12px 0;
-  border-top: 3px solid var(--edge);
+  align-items: center;
 }
 
-.rulekey {
-  width: 62px;
-  flex: none;
-  height: 44px;
-  border-radius: 50%;
+.selecttitle {
+  font-size: 13px;
+  color: var(--p1);
+}
+
+.selectrow {
   display: flex;
   align-items: center;
+  gap: 16px;
+  width: 100%;
   justify-content: center;
-  font-size: 13px;
-  color: #0c0714;
+}
+
+/* The whole body, idling - the Tekken side of the select screen. */
+.skinbig {
+  width: 120px;
+  height: 120px;
+  flex: none;
+  background-repeat: no-repeat;
+  background-size: 500% 100%;
+  image-rendering: pixelated;
+  animation: skinidle 0.9s steps(5) infinite;
+}
+
+@keyframes skinidle {
+  from {
+    background-position-x: 0%;
+  }
+  to {
+    background-position-x: 125%;
+  }
+}
+
+/* The block grid: one square per wrestler.
+   Flex rather than a fixed column count, because the roster changes between
+   events - a hard `repeat(6, ...)` silently spills the seventh wrestler onto a
+   lonely second row the moment somebody adds one. */
+.skingrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 188px; /* three 56px blocks + two gaps */
+}
+
+.skinblock {
+  width: 56px;
+  height: 56px;
+  padding: 0;
   border: 3px solid var(--edge);
+  background-color: #0c0714;
+  background-repeat: no-repeat;
+  background-position: 0 0; /* frame 0 of the idle row */
+  image-rendering: pixelated;
+  cursor: pointer;
 }
 
-.rulekey.a {
-  background: #ef6b6b;
-}
-.rulekey.b {
-  background: #58b6f0;
-}
-.rulekey.ab {
-  background: var(--good);
-  font-size: 10px;
+.skinblock.on {
+  border-color: var(--p1);
+  box-shadow: 0 0 0 2px var(--p1);
 }
 
-.ruletext {
-  font-size: 10px;
-  line-height: 1.8;
-  flex: 1;
-}
-
-.ruletext b {
+.skinname {
+  font-size: 14px;
   color: var(--ink);
+  letter-spacing: 0.1em;
+}
+
+.quickrules {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: #c9b8d6;
+  opacity: 0.8;
 }
 
 .readybar {
@@ -389,11 +563,6 @@ body.phone {
 }
 
 /* -------------------------------------------------------------- misc ---- */
-.idlecard {
-  padding: 24px;
-  text-align: center;
-}
-
 .overlaymsg {
   position: fixed;
   inset: 0;
@@ -457,5 +626,138 @@ body.phone {
     max-width: 680px;
     width: 100%;
     margin: 0 auto;
+  }
+}
+
+/* --------------------------------------------------- landscape / rotate -- */
+/* The controller is landscape-first, but a portrait phone (rotation lock is
+   common) must still be fully playable - so this is a nudge, never a wall. */
+.rotatehint {
+  display: none;
+  position: fixed;
+  top: 52px;
+  left: 8px;
+  right: 8px;
+  z-index: 120;
+  padding: 8px 10px;
+  background: var(--panel-hi);
+  border: 3px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.rotateinner {
+  font-size: 9px;
+  line-height: 1.6;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.rotateicon {
+  font-size: 18px;
+  color: var(--p1);
+  animation: rotatespin 2.4s ease-in-out infinite;
+}
+
+@keyframes rotatespin {
+  0%,
+  55%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(90deg);
+  }
+}
+
+@media (orientation: portrait) {
+  body.fightmode .rotatehint {
+    display: block;
+  }
+
+  /* The hint is a fixed banner, so the screen under it has to make room -
+     otherwise it sits on top of the weight bar, which is the one number a
+     player is watching. Addressed by id because the fight screen sets its own
+     padding and would otherwise win. */
+  body.fightmode #p-screen-rules,
+  body.fightmode #p-screen-play {
+    padding-top: 56px;
+  }
+}
+
+/* A phone held sideways is short, and character select still has to fit on it
+   without scrolling - a READY button below the fold is a match that never
+   starts. The step line goes first: sideways, the screen IS the instruction. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .stepline {
+    display: none;
+  }
+
+  .pscreen {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  /* Both sides at a glance instead of one above the other. */
+  .seatpick {
+    flex-direction: row;
+  }
+
+  .seatcard {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .selectcard {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .skinbig {
+    width: 92px;
+    height: 92px;
+  }
+
+  /* One row of wrestlers beside the big idle, the way a select screen reads.
+     Bounded by what is actually available rather than by a pixel count that has
+     to be edited every time a wrestler joins the roster - it fills the space
+     next to the big idle and wraps only if it genuinely runs out. */
+  .skingrid {
+    gap: 8px;
+    max-width: 100%;
+  }
+
+  .skinblock {
+    width: 44px;
+    height: 44px;
+  }
+
+  .skinname {
+    font-size: 11px;
+  }
+
+  #btn-ready {
+    min-height: 62px;
+    font-size: 15px;
+  }
+}
+
+/* A parry just landed: one hard flash around the whole pad. */
+.padwrap.parryhit {
+  animation: parryhitflash 0.7s steps(2) 1;
+}
+
+@keyframes parryhitflash {
+  0%,
+  60% {
+    box-shadow: inset 0 0 0 6px var(--good);
+  }
+  100% {
+    box-shadow: none;
   }
 }

@@ -1,6 +1,10 @@
-// Phone client: join a room, claim P1 or P2, read the rules and ready up, then
-// drive the fight controls. The phone never renders the match - only its own
-// small HUD slice, which keeps it immune to render and network jitter.
+// Phone client: enter the room with a name, claim P1 or P2, pick a wrestler and
+// ready up, then drive the fight controls. The phone never renders the match -
+// only its own small HUD slice, which keeps it immune to render and network
+// jitter.
+//
+// Three steps, in this order, and the phone never skips one: ENTER ROOM ->
+// CHOOSE YOUR SIDE -> PICK YOUR WRESTLER + READY.
 
 import { SEATS, SEAT_LABELS, CONFIG, weightBarFractions } from '/shared/config.js'
 import { createPhoneNet } from './net.js'
@@ -8,10 +12,28 @@ import { mountController } from './controller.js'
 
 const $ = (s) => document.querySelector(s)
 const params = new URLSearchParams(location.search)
+// Spelled out on the seat picker, where the point is choosing a side. The HUD
+// keeps the short SEAT_LABELS - there the colour already says which side.
+const SEAT_NAMES = { p1: 'PLAYER 1', p2: 'PLAYER 2' }
 const NAME_KEY = 'sumotime.name.v1'
+const SKIN_KEY = 'sumotime.skin.v1'
+
+/**
+ * The remembered wrestler, but only if it still exists.
+ *
+ * Skins come and go between events. A phone that remembers one which has since
+ * been retired would show a select grid with nothing highlighted and send a
+ * choice the ring rejects outright, leaving the player looking at someone
+ * else's wrestler with no way to say so. Falling back to the first skin is the
+ * only state that stays honest.
+ */
+function rememberedSkin() {
+  const stored = localStorage.getItem(SKIN_KEY)
+  return CONFIG.skins.list.some((s) => s.id === stored) ? stored : CONFIG.skins.list[0].id
+}
 
 const state = {
-  screen: 'join',
+  screen: null,
   lobby: null,
   mySeats: [],
   seat: null,
@@ -19,15 +41,40 @@ const state = {
   pad: null,
   phase: null,
   readySent: false,
+  readyAt: 0, // when READY was last tapped - see the de-stick in applyHud()
   lastRound: null,
+  skin: rememberedSkin(),
+  skinSent: false,
+  lastParries: 0,
+  // The seat picker was opened deliberately from the menu during a match. HUD
+  // packets arrive twenty times a second, so without this they would drag the
+  // screen back to the pad the instant it is opened.
+  browsing: false,
 }
 
-const SCREENS = ['join', 'lobby', 'rules', 'play', 'idle']
+// No spectator screen: a phone with no seat waits on the seat picker, where an
+// opening seat is always one tap away.
+const SCREENS = ['join', 'lobby', 'rules', 'play']
 function showScreen(name) {
   if (state.screen === name) return
   state.screen = name
   for (const s of SCREENS) $(`#p-screen-${s}`)?.classList.toggle('hidden', s !== name)
   if (name !== 'play') unmountPad()
+  // Character select and the pad are landscape instruments; the rotate hint
+  // covers them in portrait.
+  document.body.classList.toggle('fightmode', name === 'rules' || name === 'play')
+  // The header menu key only means something once you are in a room.
+  $('#p-menu').hidden = name === 'join'
+  $('#btn-backtopad').hidden = !(name === 'lobby' && state.seat && state.started)
+}
+
+/** Best effort only - some browsers allow it, some don't, none of it is fatal. */
+function tryLandscapeLock() {
+  const el = document.documentElement
+  const lock = () => screen.orientation?.lock?.('landscape').catch(() => {})
+  if (document.fullscreenElement) lock()
+  else if (el.requestFullscreen) el.requestFullscreen().then(lock).catch(() => lock())
+  else lock()
 }
 
 // ----------------------------------------------------------------- net -----
@@ -37,24 +84,59 @@ const net = createPhoneNet({
   },
   onJoined(res) {
     $('#p-room').textContent = net.room
+    state.started = !!res.started
     applyLobby(res.lobby)
     showScreen('lobby')
     const wanted = params.get('seat')
     if (wanted && SEATS.includes(wanted) && !state.mySeats.includes(wanted)) net.claim(wanted)
   },
-  onLobby: applyLobby,
-  onStart() {
+  onLobby(lobby) {
+    // Any lobby traffic means the ring is answering again, so a stale "RING
+    // OFFLINE" card must not be left sitting over a working controller.
+    hideOverlay()
+    applyLobby(lobby)
+  },
+
+  /**
+   * A match is starting - including the second, third and tenth one off PLAY
+   * AGAIN. This is the only reset that matters: everything the previous match
+   * left behind is cleared HERE rather than waiting for a HUD packet to imply
+   * it, and the phone is moved onto character select immediately. A phone that
+   * waits for the HUD to tell it a new match began is a phone showing the last
+   * match's screen if that packet is late, dropped, or aimed at a seat that has
+   * since changed hands.
+   */
+  onStart(lobby) {
     state.started = true
     state.readySent = false
+    state.readyAt = 0
+    state.skinSent = false
+    state.phase = null
     state.lastRound = null
+    state.lastParries = 0
+    clearFlash()
+    if (lobby) applyLobby(lobby)
+    state.browsing = false
+    if (state.seat) {
+      renderSkins()
+      paintReadyGate(false)
+      showScreen('rules')
+    } else {
+      showScreen('lobby')
+    }
   },
+
   onToLobby(lobby) {
     state.started = false
     state.readySent = false
+    state.readyAt = 0
     state.phase = null
+    state.browsing = false
+    clearFlash()
     applyLobby(lobby)
     showScreen('lobby')
   },
+
   onHud({ seat, state: hud }) {
     if (state.seat !== seat) return
     applyHud(hud)
@@ -71,9 +153,24 @@ function applyLobby(lobby) {
   state.lobby = lobby
   const me = (lobby.players || []).find((p) => p.id === net.id)
   state.mySeats = me ? me.seats : []
+  const had = state.seat
   state.seat = state.mySeats[0] || null
+
+  // Losing the seat mid-match (winner-stays-on hands it to the next challenger)
+  // must never leave the phone on a dead screen. Back to the seat picker, with
+  // a line saying what happened - the open seat is right there to take.
+  if (had && !state.seat) {
+    state.readySent = false
+    state.readyAt = 0
+    if (state.screen === 'play' || state.screen === 'rules') {
+      showToast({ text: 'YOUR SEAT WENT TO THE NEXT CHALLENGER' })
+      showScreen('lobby')
+    }
+  }
+  // Reclaiming a seat while a match is already live puts you straight back on
+  // the controls - the host's next HUD packet will settle which screen it is.
   renderSeats()
-  if (!state.seat && (state.screen === 'play' || state.screen === 'rules')) showScreen('idle')
+  renderLobbyStatus()
 }
 
 function renderSeats() {
@@ -85,16 +182,15 @@ function renderSeats() {
     const card = cards[seat] || { status: 'open', label: 'OPEN' }
     const mine = state.mySeats.includes(seat)
     const takenByOther = card.status === 'human' && !mine
+    const who = mine ? 'YOU' : takenByOther ? card.label : card.status === 'bot' ? 'BOT' : 'OPEN'
+    const action = mine ? 'TAP TO LEAVE THIS SEAT' : takenByOther ? 'TAKEN' : 'TAP TO TAKE IT'
     return `
-      <div class="seatrow pixelpanel ${mine ? 'mine' : ''}">
-        <div class="sinfo">
-          <h3 class="${seat}text">${SEAT_LABELS[seat]}</h3>
-          <div class="sblurb">${mine ? 'YOURS' : card.label}</div>
-        </div>
-        <button class="pixelbtn ${mine ? 'on' : ''}" data-seat="${seat}" ${takenByOther ? 'disabled' : ''}>
-          ${mine ? 'RELEASE' : 'CLAIM'}
-        </button>
-      </div>`
+      <button class="seatcard ${seat} ${mine ? 'mine' : ''} ${takenByOther ? 'taken' : ''}"
+              data-seat="${seat}" ${takenByOther ? 'disabled' : ''}>
+        <span class="scseat">${SEAT_NAMES[seat]}</span>
+        <span class="scwho">${esc(who)}</span>
+        <span class="scact">${action}</span>
+      </button>`
   }).join('')
 
   wrap.querySelectorAll('button[data-seat]').forEach((btn) => {
@@ -102,8 +198,44 @@ function renderSeats() {
       const seat = btn.dataset.seat
       if (state.mySeats.includes(seat)) net.release(seat)
       else net.claim(seat)
+      buzz(15)
     })
   })
+}
+
+/** The one line on the seat picker that says what happens next. */
+function renderLobbyStatus() {
+  const line = $('#p-waiting')
+  const led = $('#p-statusled')
+  const step = $('#lobbystep')
+  if (!line) return
+
+  let text
+  let good = false
+  if (!state.seat) {
+    // "Wait for a seat" is only true when there is nothing to take. The moment
+    // one opens - which is the whole point of winner-stays-on - this has to say
+    // so, because the seat is sitting right above this line.
+    const openSeat = (state.lobby?.cards || []).some((c) => c.status !== 'human')
+    text = openSeat
+      ? 'A SEAT IS OPEN — TAP IT ABOVE TO GET IN.'
+      : 'BOTH SEATS ARE TAKEN. THE LOSER’S SEAT OPENS WHEN THE MATCH ENDS.'
+    if (step) step.textContent = openSeat ? 'CHOOSE YOUR SIDE' : 'WAITING FOR A SEAT'
+    good = openSeat
+  } else {
+    good = true
+    text = state.started
+      ? 'YOU ARE IN THIS MATCH.'
+      : `${SEAT_NAMES[state.seat]} IS YOURS. WAITING FOR THE RING TO START…`
+    if (step) step.textContent = 'YOUR SIDE IS LOCKED IN'
+  }
+  line.textContent = text
+  led?.classList.toggle('on', good)
+  $('#btn-backtopad').hidden = !(state.screen === 'lobby' && state.seat && state.started)
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 }
 
 // ---------------------------------------------------------------- play -----
@@ -132,24 +264,97 @@ function setBar(bar, weight) {
   bar.querySelector('.over').style.width = `${over * 100}%`
 }
 
+// ------------------------------------------------------ character select ----
+function skinIdleUrl(s) {
+  // dir skins carry their own sheets; filter skins tint the base idle
+  return s.dir ? `${s.dir}/idle.png` : CONFIG.sprites.states.idle.file
+}
+
+function renderSkins() {
+  const grid = $('#skingrid')
+  if (!grid) return
+  const frames = CONFIG.sprites.states.idle.frames
+  grid.innerHTML = CONFIG.skins.list
+    .map((s) => {
+      const on = s.id === state.skin
+      return `<button class="skinblock ${on ? 'on' : ''}" data-skin="${s.id}" aria-pressed="${on}"
+                style="background-image:url(${skinIdleUrl(s)});background-size:${frames * 100}% 100%;filter:${s.filter || 'none'}">
+              </button>`
+    })
+    .join('')
+  grid.querySelectorAll('[data-skin]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      state.skin = btn.dataset.skin
+      localStorage.setItem(SKIN_KEY, state.skin)
+      sendSkin()
+      renderSkins()
+      buzz(15)
+    })
+  )
+  const chosen = CONFIG.skins.list.find((s) => s.id === state.skin) || CONFIG.skins.list[0]
+  const big = $('#skinbig')
+  big.style.backgroundImage = `url(${skinIdleUrl(chosen)})`
+  big.style.filter = chosen.filter || 'none'
+  $('#skinname').textContent = chosen.label
+}
+
+function sendSkin() {
+  if (state.seat) net.sendSkin(state.seat, state.skin)
+}
+
+/**
+ * Paint the READY button and its waiting line.
+ *
+ * `waiting` means "the host has our READY and is waiting on the other seat".
+ * Anything else is a live, tappable button - a disabled READY button is the one
+ * state from which a player cannot rescue themselves, so it is only ever
+ * entered on a tap that the host has confirmed or is about to.
+ */
+function paintReadyGate(waiting) {
+  const btn = $('#btn-ready')
+  if (!btn) return
+  btn.textContent = waiting ? 'WAITING…' : 'READY'
+  btn.classList.toggle('on', !waiting)
+  btn.disabled = !!waiting
+  $('#readyline').textContent = waiting ? 'WAITING FOR YOUR OPPONENT…' : 'PICK A WRESTLER, THEN TAP READY'
+  const seatline = $('#rules-seatline')
+  if (seatline && state.seat) seatline.textContent = `${SEAT_NAMES[state.seat]} — PICK YOUR WRESTLER`
+}
+
 /** The host drives every phone screen change through the HUD phase. */
 function applyHud(hud) {
   if (!hud) return
 
   if (hud.phase === 'ready') {
-    $('#rules-goal').innerHTML = `PUSH <b>${(hud.opponent || 'THEM').slice(0, 12)}</b> OUT OF THE RING.<br />BEST OF ${hud.roundsToWin * 2 - 1} ROUNDS.`
-    const waiting = state.readySent || hud.ready
-    $('#btn-ready').textContent = waiting ? 'WAITING…' : 'I’M READY'
-    $('#btn-ready').classList.toggle('on', !waiting)
-    $('#btn-ready').disabled = !!waiting
-    $('#readyline').textContent = waiting ? 'WAITING FOR YOUR OPPONENT…' : 'TAP READY WHEN YOU’VE READ THIS'
-    showScreen('rules')
+    if (state.screen !== 'rules') {
+      renderSkins()
+      state.skinSent = false
+      clearFlash()
+    }
+    if (!state.skinSent) {
+      sendSkin()
+      state.skinSent = true
+    }
+    // The host is the authority on readiness. When it says this seat is NOT
+    // ready but we still think we tapped READY, our tap belongs to a match that
+    // is over - a new one has begun. Drop the local flag so the button comes
+    // back to life instead of sitting on "WAITING…" forever with the ring
+    // asking a phone that will never answer. The grace window is only there so
+    // the button does not flicker between the tap and the host's next packet.
+    if (!hud.ready && state.readySent && Date.now() - state.readyAt > 1500) {
+      state.readySent = false
+    }
+    paintReadyGate(state.readySent || !!hud.ready)
+    if (!state.browsing) showScreen('rules')
     state.phase = hud.phase
+    state.lastRound = hud.round
     return
   }
 
-  showScreen('play')
-  mountPad()
+  if (!state.browsing) {
+    showScreen('play')
+    mountPad()
+  }
 
   $('#hud-seatlabel').textContent = SEAT_LABELS[state.seat] || ''
   $('#hud-seatlabel').className = `seatname ${state.seat}text`
@@ -181,6 +386,15 @@ function applyHud(hud) {
   light.classList.toggle('warn', !hud.parryReady && !!hud.parrying)
   state.pad?.setParryGlow(hud.parrying)
 
+  // A parry LANDING is the best moment on the controller: hard buzz, a toast,
+  // and a flash on the pad border - nothing that covers the controls.
+  if ((hud.parries || 0) > state.lastParries) {
+    buzz([20, 30, 70])
+    showToast({ text: 'PARRY! +1 MANGO 🥭' })
+    state.pad?.pulseParry()
+  }
+  state.lastParries = hud.parries || 0
+
   const hint = $('#hud-pushhint')
   const lighter = hud.oppWeight < hud.weight - 4
   if (hud.phase === 'countdown') {
@@ -190,11 +404,7 @@ function applyHud(hud) {
     hint.textContent = n > 0 ? `ROUND ${hud.round} — GET READY… ${n}` : `ROUND ${hud.round} — GO!`
     hint.classList.add('go')
   } else {
-    hint.textContent = hud.oppNearEdge
-      ? 'THEY ARE ON THE EDGE — PUSH WITH B!'
-      : lighter
-        ? 'THEY ARE LIGHT — PUSH WITH B!'
-        : 'SOFTEN THEM UP WITH A'
+    hint.textContent = hud.oppNearEdge ? 'ON THE EDGE — PUSH B!' : lighter ? 'THEY ARE LIGHT — PUSH B!' : 'TAP A TO CHIP THEM'
     hint.classList.toggle('go', hud.oppNearEdge || lighter)
   }
 
@@ -258,6 +468,10 @@ function showToast(msg) {
   setTimeout(() => el.remove(), 3000)
 }
 
+function hideOverlay() {
+  document.querySelector('.overlaymsg')?.remove()
+}
+
 function showOverlay(title, body) {
   let el = document.querySelector('.overlaymsg')
   if (!el) {
@@ -274,49 +488,107 @@ function showOverlay(title, body) {
 function wire() {
   const roomIn = $('#in-room')
   const nameIn = $('#in-name')
-  roomIn.value = (params.get('room') || sessionStorage.getItem('sumotime.lastroom') || '').toUpperCase()
+
+  // A scanned QR carries the room, so the code is settled and shown as a fact.
+  // Only a phone that arrived without one is asked to type it.
+  const scanned = (params.get('room') || '').toUpperCase()
+  const remembered = (sessionStorage.getItem('sumotime.lastroom') || '').toUpperCase()
+  roomIn.value = scanned || remembered
+  $('#roomchip-code').textContent = scanned || remembered || '----'
+  $('#roomchip').classList.toggle('hidden', !(scanned || remembered))
+  $('#roomfield').classList.toggle('hidden', !!(scanned || remembered))
   nameIn.value = (params.get('name') || localStorage.getItem(NAME_KEY) || '').toUpperCase()
 
   const doJoin = () => {
-    const room = roomIn.value.trim().toUpperCase()
-    const name = nameIn.value.trim().toUpperCase() || 'CHALLENGER'
+    const room = (roomIn.value || '').trim().toUpperCase()
+    const name = nameIn.value.trim().toUpperCase()
     if (!room) {
-      $('#joinerr').textContent = 'ENTER THE ROOM CODE FROM THE SCREEN'
+      $('#joinerr').textContent = 'ENTER THE ROOM CODE FROM THE BIG SCREEN'
+      $('#roomchip').classList.add('hidden')
+      $('#roomfield').classList.remove('hidden')
+      roomIn.focus()
+      return
+    }
+    if (!name) {
+      // The name is the whole point of this screen: it is what the ring, the
+      // scoreboard and the other player see. A room full of CHALLENGERs is what
+      // happens when this step is skipped.
+      $('#joinerr').textContent = 'TYPE A NAME FIRST'
+      nameIn.focus()
       return
     }
     localStorage.setItem(NAME_KEY, name)
     sessionStorage.setItem('sumotime.lastroom', room)
     $('#joinerr').textContent = ''
+    $('#btn-join').disabled = true
+    $('#btn-join').textContent = 'ENTERING…'
     net.join(room, name, (res) => {
-      if (!res?.ok) $('#joinerr').textContent = res?.reason || 'CONNECT FAILED'
+      $('#btn-join').disabled = false
+      $('#btn-join').textContent = 'ENTER ROOM'
+      if (!res?.ok) {
+        $('#joinerr').textContent = res?.reason || 'CONNECT FAILED'
+        // A bad code from a stale QR or an old session has to be correctable.
+        $('#roomchip').classList.add('hidden')
+        $('#roomfield').classList.remove('hidden')
+      }
     })
   }
 
   $('#btn-join').addEventListener('click', doJoin)
   roomIn.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin())
   nameIn.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin())
+  // Tapping the room chip is how you correct a code you did not mean to use.
+  $('#roomchip').addEventListener('click', () => {
+    $('#roomchip').classList.add('hidden')
+    $('#roomfield').classList.remove('hidden')
+    roomIn.focus()
+  })
 
   $('#btn-ready').addEventListener('click', () => {
     if (!state.seat) return
     state.readySent = true
+    state.readyAt = Date.now()
+    sendSkin()
     net.setReady(state.seat, true)
-    $('#btn-ready').textContent = 'WAITING…'
-    $('#btn-ready').disabled = true
-    $('#btn-ready').classList.remove('on')
-    $('#readyline').textContent = 'WAITING FOR YOUR OPPONENT…'
+    paintReadyGate(true)
     buzz(20)
+    // The tap is the user gesture the browser needs for fullscreen +
+    // orientation lock. Best effort - the rotate hint covers the rest.
+    tryLandscapeLock()
   })
 
   $('#btn-leave').addEventListener('click', () => {
     net.leave()
+    state.seat = null
+    state.mySeats = []
+    state.started = false
     showScreen('join')
   })
 
+  const backToMySeat = () => {
+    if (!state.seat) return
+    state.browsing = false
+    showScreen(state.phase && state.phase !== 'ready' ? 'play' : 'rules')
+  }
+  $('#btn-backtopad').addEventListener('click', backToMySeat)
+
+  // The menu key is the way to the seat picker from anywhere, and the way back
+  // to your own controls once you are in a match.
   $('#p-menu').addEventListener('click', () => {
-    showScreen(state.screen === 'lobby' ? (state.seat ? 'play' : 'idle') : 'lobby')
+    if (state.screen === 'lobby') backToMySeat()
+    else {
+      state.browsing = true
+      showScreen('lobby')
+    }
   })
 
-  if (params.get('room')) doJoin()
+  // A scanned QR carries the room and nothing else, and it deliberately does
+  // NOT auto-join: it lands here with the room filled in so the player can put
+  // their own name on the ring. Auto-joining sent a whole room in as
+  // CHALLENGER. A URL that also names the player is the documented
+  // solo-testing shortcut, so that one - and only that one - goes straight in.
+  if (scanned && params.get('name')) doJoin()
+  else nameIn.focus()
 }
 
 wire()

@@ -32,58 +32,73 @@
       </div>
     </header>
 
-    <!-- ============================= JOIN ============================= -->
-    <main id="p-screen-join" class="pscreen">
-      <div class="pixelpanel">
-        <div style="padding: 16px" class="col">
-          <label class="label" for="in-room">ROOM CODE</label>
+    <!-- ============================= JOIN =============================
+         Step 1 of three. A phone arrives here straight off the QR code with
+         the room already known, so the only thing it asks for is a name. -->
+    <main id="p-screen-join" class="pscreen joinscreen">
+      <div class="stepline"><span class="stepnum">1</span><span>ENTER THE ROOM</span></div>
+
+      <div class="joincard pixelpanel">
+        <!-- Scanned the QR: the room is settled, so it is shown as a fact. -->
+        <div class="roomchip" id="roomchip">
+          <span class="rclabel">ROOM</span>
+          <span class="rccode" id="roomchip-code">----</span>
+        </div>
+
+        <!-- Typed in by hand: no QR, so the code has to be asked for. -->
+        <div class="joinfield hidden" id="roomfield">
+          <label class="label" for="in-room">ROOM CODE ON THE BIG SCREEN</label>
           <input id="in-room" class="pixelinput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
-          <label class="label" for="in-name" style="margin-top: 10px">YOUR NAME</label>
-          <input id="in-name" class="pixelinput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CHALLENGER" />
-          <button class="pixelbtn on" id="btn-join" style="margin-top: 14px; min-height: 72px">ENTER THE RING</button>
-          <div class="label warntext" id="joinerr"></div>
         </div>
+
+        <div class="joinfield">
+          <label class="label" for="in-name">YOUR NAME</label>
+          <input id="in-name" class="pixelinput big" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CHALLENGER" />
+          <div class="fieldhint">UP TO 10 LETTERS — THIS IS WHAT THE RING SHOWS</div>
+        </div>
+
+        <button class="pixelbtn on joinbtn" id="btn-join">ENTER ROOM</button>
+        <div class="label warntext" id="joinerr"></div>
       </div>
     </main>
 
-    <!-- ============================ LOBBY ============================= -->
+    <!-- ============================ LOBBY =============================
+         Step 2: pick a side. This is also where a phone with no seat waits,
+         so an opening seat is always one tap away. -->
     <main id="p-screen-lobby" class="pscreen hidden">
-      <div class="label dim">CLAIM A SEAT. AN OPEN SEAT IS FOUGHT BY THE BOT.</div>
-      <div id="p-seats" class="col" style="gap: 12px"></div>
-      <div class="pixelpanel">
-        <div style="padding: 14px">
-          <div class="label dim" id="p-waiting">WAITING FOR THE RING TO START…</div>
-        </div>
+      <div class="stepline"><span class="stepnum">2</span><span id="lobbystep">CHOOSE YOUR SIDE</span></div>
+
+      <div id="p-seats" class="seatpick"></div>
+
+      <div class="statusbar pixelpanel">
+        <span class="led" id="p-statusled"></span>
+        <div class="label" id="p-waiting">WAITING FOR THE RING TO START…</div>
       </div>
-      <button class="pixelbtn danger" id="btn-leave">LEAVE ROOM</button>
+
+      <div class="lobbyfoot">
+        <button class="pixelbtn" id="btn-backtopad" hidden>◄ BACK TO MY CONTROLS</button>
+        <button class="pixelbtn danger" id="btn-leave">LEAVE ROOM</button>
+      </div>
     </main>
 
-    <!-- ============================= RULES ============================ -->
+    <!-- ==================== CHARACTER SELECT + READY ==================
+         Step 3: who you are, then READY. -->
     <main id="p-screen-rules" class="pscreen hidden">
-      <div class="pixelpanel rulescard">
-        <div class="rulesgoal" id="rules-goal">PUSH YOUR OPPONENT OUT OF THE RING.<br />BEST OF 3 ROUNDS.</div>
+      <div class="stepline"><span class="stepnum">3</span><span id="rules-seatline">PICK YOUR WRESTLER</span></div>
 
-        <div class="rulerow">
-          <div class="rulekey a">A</div>
-          <div class="ruletext"><b>HIT</b> — fast jab. Chips their weight so they get easier to shove.</div>
+      <div class="selectcard pixelpanel">
+        <div class="selecttitle" id="rules-goal">PICK YOUR WRESTLER</div>
+        <div class="selectrow">
+          <div id="skinbig" class="skinbig"></div>
+          <div id="skingrid" class="skingrid"></div>
         </div>
-        <div class="rulerow">
-          <div class="rulekey b">B</div>
-          <div class="ruletext"><b>PUSH</b> — slow but huge. This is what throws them out. Miss it and you’re wide open.</div>
-        </div>
-        <div class="rulerow">
-          <div class="rulekey ab">A+B</div>
-          <div class="ruletext"><b>PARRY</b> — hold both. Blocks their blow, staggers them, and wins you a mango that restores weight.</div>
-        </div>
-        <div class="rulerow">
-          <div class="rulekey" style="background: var(--p1)">▲</div>
-          <div class="ruletext"><b>WEIGHT</b> is your health and your mass. Heavy shoves harder, light runs faster. The ring shrinks — don’t stall.</div>
-        </div>
+        <div class="skinname" id="skinname">MANGO</div>
+        <div class="quickrules">TAP A HIT · HOLD A PARRY = 🥭 · B PUSH</div>
       </div>
 
       <div class="readybar">
-        <button class="pixelbtn on" id="btn-ready">I’M READY</button>
-        <div class="waitline dim" id="readyline">TAP READY WHEN YOU’VE READ THIS</div>
+        <button class="pixelbtn on" id="btn-ready">READY</button>
+        <div class="waitline dim" id="readyline"></div>
       </div>
     </main>
 
@@ -109,23 +124,26 @@
           </div>
           <span class="label dim" id="hud-clock">0:00</span>
         </div>
-        <div class="pushhint" id="hud-pushhint">SOFTEN THEM UP WITH A</div>
+        <div class="pushhint" id="hud-pushhint">TAP A TO CHIP THEM</div>
       </div>
       <div id="p-pad" style="display: contents"></div>
     </main>
 
-    <!-- ============================= IDLE ============================= -->
-    <main id="p-screen-idle" class="pscreen hidden">
-      <div class="pixelpanel idlecard">
-        <h3 style="margin-bottom: 14px">WAITING</h3>
-        <p class="label dim" style="line-height: 1.9">
-          BOTH SEATS ARE TAKEN.<br />WHEN A MATCH ENDS, THE LOSER’S SEAT OPENS AND YOU CAN CLAIM IT.
-        </p>
-      </div>
-    </main>
+    <!-- No separate "you are spectating" screen: a phone with no seat waits on
+         the seat picker itself, so the moment a seat opens it is one tap away
+         instead of behind a menu. -->
 
     <div id="p-matchflash" class="matchflash hidden"><div class="big" id="p-matchflash-text"></div></div>
     <div id="p-toasts" class="toast-wrap"></div>
+
+    <!-- The controller is a landscape instrument: shown in portrait whenever
+         the phone is in fight mode (character select or the pad itself). -->
+    <div id="rotatehint" class="rotatehint">
+      <div class="rotateinner">
+        <div class="rotateicon">⟳</div>
+        <div>TURN YOUR PHONE SIDEWAYS</div>
+      </div>
+    </div>
 
     <script type="module" src="/client/phone/main.js"></script>
   </body>
