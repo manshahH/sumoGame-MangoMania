@@ -2,7 +2,7 @@
 // best-of-3 match loop, and the result screen. Phones never render a pixel of
 // the fight - they send input intents and receive their own HUD slice.
 
-import { CONFIG, SEATS, SEAT_LABELS } from '/shared/config.js'
+import { CONFIG, SEATS } from '/shared/config.js'
 import { createEngine } from '/shared/engine.js'
 import { createStreak, recordWin } from '/shared/streak.js'
 import {
@@ -11,12 +11,13 @@ import {
   qualifies,
   isNewRecord,
   addEntry,
-  LEADERBOARD_SIZE,
+  rankOf,
 } from '/shared/leaderboard.js'
 import { createHostNet } from './net.js'
 import { createAudio } from './audio.js'
 import { loadAssets } from './sprites.js'
 import { createRenderer } from './render.js'
+import { createAttract } from './attract.js'
 
 const $ = (sel) => document.querySelector(sel)
 const params = new URLSearchParams(location.search)
@@ -65,9 +66,17 @@ const SCREENS = ['lobby', 'fight']
 function showScreen(name) {
   app.screen = name
   for (const s of SCREENS) $(`#screen-${s}`)?.classList.toggle('hidden', s !== name)
+  // The attract loop only runs while it is on screen.
+  if (name === 'lobby') attract?.start()
+  else attract?.stop()
 }
 
 // --------------------------------------------------------------- lobby -----
+/**
+ * The seat "cards" are now nameplates standing under whichever wrestler the
+ * attract canvas drew, so this writes the text and hands occupancy to the
+ * canvas, which owns the walk-in.
+ */
 function renderLobby(lobby) {
   app.lobby = lobby
   const stations = lobby?.stations || {}
@@ -76,14 +85,27 @@ function renderLobby(lobby) {
     wrap.innerHTML = SEATS.map((seat) => {
       const s = stations[seat] || { owner: 'bot' }
       const human = s.owner === 'human'
-      return `
-        <div class="pixelpanel seatcard ${human ? 'claimed' : ''}">
-          <h3 class="${seat}text">${SEAT_LABELS[seat]}</h3>
-          <div class="label dim">${human ? 'PLAYER' : 'CPU FIGHTER'}</div>
-          <div class="who ${human ? 'goodtext' : 'dim'}">${human ? s.name : 'BOT — SCAN TO TAKE THIS SEAT'}</div>
-        </div>`
+      // The wrestler on the canvas stays at full strength either way - the
+      // plank at his feet is what says whether a person is standing there.
+      return human
+        ? `<div class="plate ${seat}"><div class="pname">${esc(s.name)}</div></div>`
+        : `<div class="plate ${seat} open">
+             <div class="pname">Challenger wanted</div>
+             <div class="psub">Scan to join</div>
+           </div>`
     }).join('')
   }
+
+  attract?.setSeats(
+    Object.fromEntries(
+      SEATS.map((seat) => {
+        const s = stations[seat] || {}
+        return [seat, { kind: s.owner === 'human' ? 'human' : 'bot', name: s.name || '' }]
+      })
+    )
+  )
+
+  syncSeatKinds()
 
   const humans = SEATS.filter((s) => stations[s]?.owner === 'human').length
   const note = $('#startnote')
@@ -92,8 +114,8 @@ function renderLobby(lobby) {
       humans === 0
         ? 'Nobody has joined yet — starting now runs a bot-vs-bot demo match.'
         : humans === 1
-          ? 'One player vs the bot. A second phone can still claim the open seat.'
-          : 'Two players. Both phones will be asked to ready up.'
+          ? 'One player against the bot. A second phone can still take the open seat.'
+          : 'Both seats taken. Each phone will be asked to ready up.'
   }
   renderChampion()
 }
@@ -102,24 +124,37 @@ function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 }
 
+/**
+ * The venue's high score board: rank, name, mangoes, in the pixel font, the
+ * leader a size up. Unclaimed slots are dashed-out rows, the way an arcade
+ * table shows scores nobody has set yet - an invitation, not an apology.
+ */
 function renderChampion() {
   const body = $('#champbody')
   if (!body) return
-  const rows = app.board.entries
-    .map(
-      (e, i) => `
-      <div class="lbrow ${i === 0 ? 'top' : ''}">
-        <span class="lbrank">${i + 1}</span>
-        <span class="lbname">${esc(e.name)}</span>
-        <span class="lbmango">🥭 ${e.mangoes}</span>
-        <span class="lbhits">${e.hits} HITS</span>
+  const entries = app.board.entries
+  const slots = Math.max(3, entries.length)
+  const rows = Array.from({ length: slots }, (_, i) => {
+    const e = entries[i]
+    if (!e) {
+      return `
+      <div class="scorerow ghost">
+        <span class="srank">${i + 1}</span>
+        <span class="sname">- - - -</span>
+        <span class="scount">0<img src="/assets/ui/mango.png" alt="" /></span>
       </div>`
-    )
-    .join('')
-  const empty = `<div class="champline dim">NO SCORES YET — MOST MANGOES IN A MATCH TAKES THE TOP SPOT</div>`
+    }
+    return `
+      <div class="scorerow ${i === 0 ? 'lead' : ''}">
+        <span class="srank">${i + 1}</span>
+        <span class="sname">${esc(e.name)}</span>
+        <span class="scount">${e.mangoes}<img src="/assets/ui/mango.png" alt="mangoes" /></span>
+      </div>`
+  }).join('')
+  const hint = entries.length ? '' : `<p class="scorehint">Most mangoes in a match takes the board.</p>`
   const s = app.streak
-  const champ = s.streak > 0 ? `<div class="champline p1text">RING HELD BY ${esc(s.championName)} · ${s.streak} IN A ROW</div>` : ''
-  body.innerHTML = (rows || empty) + champ
+  const champ = s.streak > 0 ? `<p class="streakline">Ring held by <b>${esc(s.championName)}</b> · ${s.streak} in a row</p>` : ''
+  body.innerHTML = rows + hint + champ
 }
 
 function renderRoom(res) {
@@ -127,14 +162,37 @@ function renderRoom(res) {
   $('#roomcode').textContent = res.code
   $('#joinurl').textContent = res.url
   const qrbox = $('#qrbox')
-  qrbox.innerHTML = res.qrSvg || `<div class="label" style="color:#140b1a">QR UNAVAILABLE<br />TYPE THE URL</div>`
+  qrbox.innerHTML = res.qrSvg || 'QR UNAVAILABLE — TYPE THE URL'
   $('#lan-note').textContent = `LAN ${res.lan}:${res.port}`
+}
+
+// Each tier is shown as the fighter you would face, so they need visibly
+// different silhouettes: a frame picked out of three different sheets.
+const TIER_POSE = {
+  rookie: { file: '/assets/sumo/idle.png', frames: 5, index: 0 },
+  ozeki: { file: '/assets/sumo/brace.png', frames: 5, index: 2 },
+  yokozuna: { file: '/assets/sumo/push.png', frames: 5, index: 3 },
 }
 
 function renderTiers() {
   const row = $('#tierrow')
   row.innerHTML = Object.entries(CONFIG.bots.tiers)
-    .map(([key, t]) => `<button class="pixelbtn ${key === app.botTier ? 'on' : ''}" data-tier="${key}">${t.label}</button>`)
+    .map(([key, t]) => {
+      const pose = TIER_POSE[key] || TIER_POSE.rookie
+      const on = key === app.botTier
+      // The sheet is one row of square frames. The waiting fighters hold one
+      // pose; the chosen one gets the whole 5-frame row and the CSS steps()
+      // animation walks it - he is the only thing moving on that side.
+      const art = on
+        ? `background-image:url(${pose.file});background-size:${pose.frames * 100}% 100%`
+        : `background-image:url(${pose.file});background-size:${pose.frames * 100}% 100%;background-position:${
+            pose.frames > 1 ? (pose.index / (pose.frames - 1)) * 100 : 0
+          }% 0`
+      return `<button class="tierpick ${on ? 'on' : ''}" data-tier="${key}" aria-pressed="${on}">
+                <span class="tierart" style="${art}"></span>
+                <span class="tiername">${t.label}</span>
+              </button>`
+    })
     .join('')
   $('#tierhint').textContent = CONFIG.bots.tiers[app.botTier]?.blurb || ''
   row.querySelectorAll('[data-tier]').forEach((btn) =>
@@ -152,6 +210,8 @@ function setStatus(text) {
 }
 
 // ----------------------------------------------------------------- net -----
+const SKIN_IDS = new Set(CONFIG.skins.list.map((s) => s.id))
+
 const net = createHostNet({
   onStatus: setStatus,
   onRoom: renderRoom,
@@ -163,16 +223,24 @@ const net = createHostNet({
     if (ring.identity?.[msg.seat]?.id !== msg.playerId) return
     ring.engine.setReady(msg.seat, msg.ready)
   },
+  onSkin: (msg) => {
+    // Same guard as ready: the seat holder picks their own wrestler.
+    if (ring.identity?.[msg.seat]?.id !== msg.playerId) return
+    if (!SKIN_IDS.has(msg.skin)) return
+    ring.skins[msg.seat] = msg.skin
+  },
 })
 
 const audio = createAudio()
 let renderer = null
+let attract = null
 
 // --------------------------------------------------------------- ring ------
 const ring = {
   engine: null,
   identity: null,
   names: { p1: 'P1', p2: 'P2' },
+  skins: { ...CONFIG.skins.defaults },
   raf: 0,
   lastT: 0,
   hudAccum: 0,
@@ -186,11 +254,46 @@ function seatIdentity(seat) {
   return { kind: 'bot', id: `BOT:${seat}`, name: `BOT ${CONFIG.bots.tiers[app.botTier]?.label || ''}`.trim() }
 }
 
+/**
+ * Keep the running engine's idea of who is driving each seat in step with the
+ * lobby. The lobby moves under a live match all the time - a phone drops, a
+ * challenger takes the seat that just opened, someone claims P2 while the ready
+ * gate is up - and an engine that only ever sees the snapshot taken at
+ * beginMatch() goes wrong in two visible ways: a dropped player's wrestler
+ * stands frozen in the ring, and a seat claimed during the ready gate waits
+ * forever for a READY from a phone the engine thinks is a bot.
+ *
+ * The split matters. Control follows the lobby immediately. Identity - the name
+ * on the plate, who the leaderboard credits - is only re-read while the ready
+ * gate is up, so a mid-match disconnect hands the fighter to the bot without
+ * rewriting who was fighting.
+ */
+function syncSeatKinds() {
+  const engine = ring.engine
+  if (!engine || !ring.identity) return
+  const onReadyGate = engine.state.phase === 'ready'
+
+  for (const seat of SEATS) {
+    const now = seatIdentity(seat)
+    if (engine.seatKind[seat] !== now.kind) {
+      engine.setSeatKind(seat, now.kind)
+      // setSeatKind marks a bot ready; a seat that just became human has a
+      // person behind it who has not read anything yet.
+      if (now.kind === 'human') engine.setReady(seat, false)
+    }
+    if (onReadyGate && ring.identity[seat]?.id !== now.id) {
+      ring.identity[seat] = now
+      ring.names[seat] = now.name
+    }
+  }
+}
+
 function beginMatch() {
   const p1 = seatIdentity('p1')
   const p2 = seatIdentity('p2')
   ring.identity = { p1, p2 }
   ring.names = { p1: p1.name, p2: p2.name }
+  ring.skins = { ...CONFIG.skins.defaults }
   ring.prevCountdownCeil = null
   ring.settled = false
   // Every match opens on the ready gate: each human reads the rules on their
@@ -230,6 +333,7 @@ function buildHud(state) {
       parryReady: !f.parry && f.parryCooldown <= 0,
       parrying: !!f.parry,
       ready: !!ring.engine?.ready[seat],
+      parries: state.stats[seat].parries, // the phone flashes when this ticks up
       opponent: ring.names[seat === 'p1' ? 'p2' : 'p1'],
       countdown: state.countdown,
       timeLeft: Math.max(0, CONFIG.match.roundSeconds - state.timeSec),
@@ -302,60 +406,55 @@ function settleMatch(state) {
   $('#result-next').textContent = queued
     ? 'CHALLENGER SEAT OPEN — NEXT PLAYER, CLAIM IT ON YOUR PHONE'
     : 'PLAY AGAIN KEEPS THE SAME SEATS'
+
+  // Score the board BEFORE renderChampion so the new entry is already on it.
+  const scored = recordLeaderboardEntries(state)
+  $('#result-record').innerHTML = scored
+    .map((e) =>
+      e.record
+        ? `<span class="newrecord">NEW RECORD</span> ${esc(e.name)} · ${e.mangoes} 🥭`
+        : `<span class="madeboard">ON THE BOARD #${e.rank}</span> ${esc(e.name)} · ${e.mangoes} 🥭`
+    )
+    .join('<br />')
+  $('#result-record').classList.toggle('hidden', scored.length === 0)
+
   $('#resultcard').classList.remove('hidden')
   renderChampion()
-
-  offerLeaderboardEntry(state)
 }
 
 /**
- * Every human's match haul is a leaderboard candidate. A run good enough to
- * make the board asks for a name before it is saved - the board is the prize
- * hook at an event, so nobody lands on it as an anonymous "P1".
+ * Put every qualifying human run straight onto the board, under the name they
+ * typed when they entered the room.
+ *
+ * There is no "enter your name" step and no SAVE button. The player already
+ * gave their name to get into the room; asking for it again the moment they
+ * win is asking twice for the same thing, at the one moment they are being
+ * cheered and are not looking at the keyboard - and a form nobody fills in is
+ * a score that never lands on the board. Playing again and beating it simply
+ * scores again.
  */
-function offerLeaderboardEntry(state) {
-  const candidates = SEATS.filter((seat) => ring.identity[seat].kind === 'human')
-    .map((seat) => ({
-      seat,
+function recordLeaderboardEntries(state) {
+  const scored = []
+  for (const seat of SEATS) {
+    if (ring.identity[seat].kind !== 'human') continue // the board is for people
+    const entry = {
       name: ring.identity[seat].name,
       mangoes: state.stats[seat].mangoes,
       hits: state.stats[seat].hits,
       rounds: state.rounds[seat],
       won: state.winner === seat,
       at: Date.now(),
-    }))
-    .filter((entry) => qualifies(app.board, entry))
-    .sort((a, b) => b.mangoes - a.mangoes || b.hits - a.hits)
-
-  ring.pendingEntries = candidates
-  promptNextEntry()
-}
-
-function promptNextEntry() {
-  const entry = ring.pendingEntries?.shift()
-  if (!entry) {
-    $('#recordcard').classList.add('hidden')
-    return
+    }
+    if (!qualifies(app.board, entry)) continue
+    // Both asked BEFORE inserting: afterwards the entry is a copy, and two
+    // seats settling in the same millisecond would be indistinguishable.
+    const record = isNewRecord(app.board, entry)
+    const rank = rankOf(app.board, entry)
+    app.board = addEntry(app.board, entry)
+    scored.push({ ...entry, record, rank })
   }
-  ring.currentEntry = entry
-  $('#record-head').textContent = isNewRecord(app.board, entry) ? 'NEW RECORD!' : 'YOU MADE THE BOARD!'
-  $('#record-stats').innerHTML = `🥭 <b>${entry.mangoes}</b> MANGOES · ${entry.hits} HITS`
-  const input = $('#record-name')
-  input.value = entry.name
-  $('#recordcard').classList.remove('hidden')
-  input.focus()
-  input.select()
-}
-
-function saveRecord() {
-  const entry = ring.currentEntry
-  if (!entry) return
-  const typed = $('#record-name').value.trim().toUpperCase().slice(0, 12)
-  app.board = addEntry(app.board, { ...entry, name: typed || entry.name || 'ANON' })
-  saveBoard()
-  renderChampion()
-  ring.currentEntry = null
-  promptNextEntry()
+  if (scored.length) saveBoard()
+  return scored
 }
 
 function loop(now) {
@@ -374,7 +473,14 @@ function loop(now) {
   const events = ring.engine.tick(dt)
   dispatchAudio(events)
   renderer.handleEvents(events, state)
-  renderer.draw(state, dt, { names: ring.names, streak: app.streak, ready: ring.engine.ready })
+  renderer.draw(state, dt, {
+    names: ring.names,
+    skins: ring.skins,
+    streak: app.streak,
+    ready: ring.engine.ready,
+    seatKind: ring.engine.seatKind,
+    challengerWaiting: state.phase === 'ready' && challengerWaiting(),
+  })
 
   ring.hudAccum += dt
   if (ring.hudAccum >= 1 / CONFIG.netHz) {
@@ -412,10 +518,8 @@ function backToLobby() {
   ring.engine = null
   audio.stopLoop()
   $('#resultcard').classList.add('hidden')
-  $('#recordcard').classList.add('hidden')
-  ring.pendingEntries = []
-  ring.currentEntry = null
   net.toLobby()
+  attract?.resetZoom()
   showScreen('lobby')
   renderChampion()
 }
@@ -424,36 +528,39 @@ function backToLobby() {
 function wireChrome() {
   $('#btn-sound').addEventListener('click', (e) => {
     app.sound = !app.sound
-    e.currentTarget.textContent = app.sound ? 'SND ON' : 'SND OFF'
+    e.currentTarget.textContent = app.sound ? 'Sound on' : 'Sound off'
     audio.setEnabled(app.sound)
   })
   $('#btn-debug').addEventListener('click', toggleDebug)
+  $('#btn-howto').addEventListener('click', () => $('#howto').classList.remove('hidden'))
+  $('#btn-howto-close').addEventListener('click', () => $('#howto').classList.add('hidden'))
   $('#btn-lobby').addEventListener('click', backToLobby)
-  $('#btn-record-save').addEventListener('click', saveRecord)
-  $('#btn-record-skip').addEventListener('click', () => {
-    ring.currentEntry = null
-    promptNextEntry()
-  })
-  $('#record-name').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveRecord()
-  })
   $('#btn-result-lobby').addEventListener('click', backToLobby)
   $('#btn-again').addEventListener('click', () => {
-    $('#recordcard').classList.add('hidden')
-    ring.pendingEntries = []
-    ring.currentEntry = null
     net.start()
     beginMatch()
   })
+  // The camera pushes into the ring before the match takes over the screen, so
+  // the lobby and the fight read as the same place rather than two screens.
+  let starting = false
   $('#btn-start').addEventListener('click', () => {
-    net.start()
-    beginMatch()
+    if (starting) return // the zoom owns the screen until the match takes over
+    starting = true
+    audio.resume()
+    Promise.resolve(attract?.zoomIn()).then(() => {
+      starting = false
+      net.start()
+      beginMatch()
+    })
   })
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return
     if (e.key === 'd' || e.key === 'D') toggleDebug()
-    if (e.key === 'Escape' && app.screen === 'fight') backToLobby()
+    if (e.key === 'Escape') {
+      if (!$('#howto').classList.contains('hidden')) $('#howto').classList.add('hidden')
+      else if (app.screen === 'fight') backToLobby()
+    }
   })
 
   const unlock = () => {
@@ -463,18 +570,32 @@ function wireChrome() {
   window.addEventListener('pointerdown', unlock)
 }
 
+// The debug toggle is not part of the attract screen - it only appears once
+// debug is actually on, via ?debug or the D key.
 function toggleDebug() {
   app.debug = !app.debug
   $('#debug')?.classList.toggle('hidden', !app.debug)
+  $('#btn-debug')?.classList.toggle('hidden', !app.debug)
 }
 
 async function boot() {
   const assets = await loadAssets()
   renderer = createRenderer($('#fightcanvas'), assets)
+  attract = createAttract($('#attract'), assets, {
+    host: $('#screen-lobby'),
+    onEvent: (e) => {
+      if (e.type === 'join') audio.cue.cheer()
+      else if (e.type === 'ready') audio.cue.bell()
+    },
+  })
   wireChrome()
   renderTiers()
   renderChampion()
-  if (app.debug) $('#debug')?.classList.remove('hidden')
+  renderLobby(app.lobby)
+  if (app.debug) {
+    $('#debug')?.classList.remove('hidden')
+    $('#btn-debug')?.classList.remove('hidden')
+  }
   showScreen('lobby')
 
   if (params.has('test')) {

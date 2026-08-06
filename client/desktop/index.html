@@ -6,7 +6,10 @@
     <title>SUMO TIME — RING</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/client/shared/pixel.css" />
     <link rel="stylesheet" href="/client/desktop/desktop.css" />
     <link
@@ -16,51 +19,87 @@
   </head>
   <body class="desktop">
     <!-- ============================= LOBBY ============================ -->
+    <!-- The arena is the interface. Everything below sits inside it, not on
+         top of it: the canvas paints the dohyo and publishes its geometry as
+         CSS variables, and the overlay anchors to those. -->
     <main id="screen-lobby" class="screenview">
-      <header class="lobbyhead">
-        <div>
-          <h1 id="brand">SUMO TIME</h1>
-          <div class="label dim">PIXEL SUMO ARCADE · MANGO MANIA</div>
-        </div>
-        <div class="row" style="gap: 8px">
-          <div class="statuschip"><span class="led" id="netled"></span><span id="nettext">LINKING</span></div>
-          <button class="pixelbtn small" id="btn-sound">SND ON</button>
-          <button class="pixelbtn small" id="btn-debug">DBG</button>
-        </div>
-      </header>
+      <canvas id="attract" class="attractcanvas"></canvas>
 
-      <div class="lobbygrid">
-        <!-- the hero: everything a stranger walking up needs -->
-        <section class="pixelpanel joinpanel">
-          <div class="panel-title">SCAN TO PLAY</div>
-          <div class="panel-body joinbody">
-            <div class="label dim">ROOM CODE</div>
-            <div id="roomcode" class="roomcode">----</div>
+      <div class="lobbyui">
+        <header class="topbar">
+          <div class="hostline">Galvan AI <span class="cross">×</span> Innovista</div>
+          <div class="statusline">
+            <span class="netpill"><span class="led" id="netled"></span><span id="nettext">LINKING</span></span>
+            <button class="tinybtn" id="btn-sound">Sound on</button>
+            <button class="tinybtn hidden" id="btn-debug">Debug</button>
+          </div>
+        </header>
+
+        <!-- The arena sign, hung from above: the event banner over the game's
+             name over its one line. An object in the venue, not a heading. -->
+        <div class="marquee">
+          <div class="eventline">MANGO MANIA</div>
+          <div class="plank">
+            <h1 id="brand">SUMO TIME</h1>
+            <p class="tagline">Easy to join. Hard to stay on.</p>
+          </div>
+        </div>
+
+        <!-- A tournament notice nailed up by the door: wood frame, cream
+             paper, pixel pins, everything a joiner needs on one sheet. -->
+        <section class="notice">
+          <div class="paper">
+            <span class="pin tl"></span><span class="pin tr"></span>
+            <span class="pin bl"></span><span class="pin br"></span>
+            <h2 class="noticehead">Step into the ring</h2>
             <div id="qrbox" class="qrbox"></div>
+            <div class="roomline"><span class="roomlabel">Room</span><span id="roomcode" class="roomcode">----</span></div>
             <div id="joinurl" class="joinurl">connecting…</div>
-            <div class="label dim" id="lan-note"></div>
           </div>
         </section>
+        <div id="lan-note" class="lannote"></div>
 
-        <section class="lobbyright">
-          <div class="seatcards" id="seatcards"></div>
-
-          <div class="pixelpanel">
-            <div class="panel-title">BOT DIFFICULTY</div>
-            <div class="panel-body">
-              <div class="tierrow" id="tierrow"></div>
-              <p class="hint" id="tierhint"></p>
-            </div>
-          </div>
-
-          <div class="pixelpanel champpanel">
-            <div class="panel-title">MANGO MANIA LEADERBOARD</div>
-            <div class="panel-body" id="champbody"></div>
-          </div>
-
-          <button class="pixelbtn on bigbtn startbtn" id="btn-start">▶ START MATCH · BEST OF 3</button>
-          <p class="hint center" id="startnote"></p>
+        <!-- The high score board on the venue wall. -->
+        <section class="scoreboard">
+          <h2 class="scorehead">TOP MANGOES</h2>
+          <div id="champbody" class="scorebody"></div>
         </section>
+
+        <!-- Character select: who will you face? -->
+        <section class="select">
+          <h2 class="selecthead">Choose your opponent</h2>
+          <div id="tierrow" class="tierrow"></div>
+          <p id="tierhint" class="tierhint"></p>
+        </section>
+
+        <!-- Nameplates, pinned under whichever wrestler the canvas drew. -->
+        <div id="seatcards" class="nameplates"></div>
+
+        <!-- The cabinet buttons, sitting in the ring: the mango key and the
+             smaller cream key under it. -->
+        <div class="ctastack">
+          <button class="arcadebtn" id="btn-start">START MATCH<span>BEST OF 3</span></button>
+          <button class="arcadebtn howtobtn" id="btn-howto">HOW TO PLAY</button>
+        </div>
+
+        <div class="ringfoot">
+          <p id="startnote" class="startnote"></p>
+        </div>
+      </div>
+
+      <!-- ========================== HOW TO PLAY ======================== -->
+      <div id="howto" class="howto hidden">
+        <div class="howtoinner">
+          <h2 class="howtotitle">HOW TO PLAY</h2>
+          <p class="howtogoal">Push them out of the ring. Best of 3.</p>
+          <ul class="moves">
+            <li><span class="key">A</span><span><b>Hit.</b> Tap to chip their weight.</span></li>
+            <li><span class="key wide">A ⏵</span><span><b>Parry.</b> Hold A. Blocks a blow — the <i>only</i> way to win a mango and grow.</span></li>
+            <li><span class="key">B</span><span><b>Push.</b> The finisher — throws them out.</span></li>
+            <li><span class="key mango">▲</span><span><b>Weight.</b> Heavy shoves harder. Light runs faster.</span></li>
+          </ul>
+          <button class="ghostbtn solid" id="btn-howto-close">Got it</button>
+        </div>
       </div>
     </main>
 
@@ -76,6 +115,9 @@
           <div class="resulttitle" id="result-title">P1 WINS</div>
           <div class="resultscore" id="result-score">2 — 0</div>
           <div class="label" id="result-streak"></div>
+          <!-- Scores land on the board by themselves, under the name the player
+               gave when they joined. This line reports it; it never asks. -->
+          <div class="resultrecord hidden" id="result-record"></div>
           <div class="label dim" id="result-next"></div>
           <div class="resultbtns">
             <button class="pixelbtn on bigbtn" id="btn-again">▶ PLAY AGAIN</button>
@@ -84,19 +126,9 @@
         </div>
       </div>
 
-      <!-- new leaderboard entry: asks for a name before the score is saved -->
-      <div id="recordcard" class="resultcard hidden">
-        <div class="pixelpanel resultinner">
-          <div class="recordhead" id="record-head">NEW RECORD!</div>
-          <div class="recordstats" id="record-stats"></div>
-          <label class="label dim" for="record-name">ENTER YOUR NAME FOR THE LEADERBOARD</label>
-          <input id="record-name" class="pixelinput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" />
-          <div class="resultbtns">
-            <button class="pixelbtn on bigbtn" id="btn-record-save">SAVE TO LEADERBOARD</button>
-            <button class="pixelbtn bigbtn" id="btn-record-skip">SKIP</button>
-          </div>
-        </div>
-      </div>
+      <!-- No "enter your name" card. A qualifying run goes onto the board by
+           itself, under the name the player gave when they entered the room -
+           see recordLeaderboardEntries() in main.js. -->
     </main>
 
     <aside id="debug" class="debugpane pixelpanel hidden">

@@ -6,6 +6,7 @@
 
 import { CONFIG, SEATS, bodyRadiusFromWeight, weightBarFractions } from '/shared/config.js'
 import { Animator, drawFrame } from './sprites.js'
+import { drawDohyo } from './dohyo.js'
 
 export const CANVAS_W = 960
 export const CANVAS_H = 540
@@ -17,6 +18,24 @@ const PROJ = { cx: CANVAS_W / 2, cy: 352, scale: 1.0, squash: 0.46 }
 // The HUD owns a solid band across the top. Nothing in the arena is allowed to
 // draw into it, so names and the clock never fight the crowd or the roof.
 const HUD_H = 86
+
+// The same warm venue the lobby lives in - sky, wood, clay - so walking from
+// the attract screen into the fight is walking deeper into one building.
+const SKY = '#150e09'
+const FLOOR = '#241812'
+const FLOOR_EDGE = '#2e1f15'
+const WOOD_DARK = '#241610'
+const WOOD_EDGE = '#0d0805'
+const WOOD_LITE = '#56381f'
+
+// venue geometry, all derived from the ring's fixed projection.
+// One tier of crowd, drawn big: a front row of actual people, not a wallpaper
+// of specks - the whole cast shares one scale ladder with the fighters.
+const CROWD_TOP = 96
+const CROWD_H = 132
+const CROWD_SRC = 0.42 // top slice of the sheet: the rail and the first row
+const RAIL_H = 18
+const RAIL_Y = CROWD_TOP + CROWD_H - RAIL_H * 0.5
 
 function worldToScreen(x, y) {
   return { x: PROJ.cx + x * PROJ.scale, y: PROJ.cy + y * PROJ.scale * PROJ.squash }
@@ -38,6 +57,7 @@ export function createRenderer(canvas, assets) {
   let hitstop = 0
   let banner = null // { text, sub, color, t, total }
   let crowdWave = 0
+  let cheerT = 0 // crowd energy - spikes on big moments, spends itself down
 
   function screenShake(mag, dur) {
     shakeMag = Math.max(shakeMag, mag)
@@ -82,6 +102,7 @@ export function createRenderer(canvas, assets) {
         floatText(p.x, p.y - 34, 'PUSH!', '#ffce54', 15)
         screenShake(Math.min(15, 5 + e.knockback / 12), 0.24)
         freeze(Math.min(0.1, 0.035 + e.knockback / 800))
+        cheerT = Math.max(cheerT, 0.45)
       } else if (e.type === 'parry') {
         const f = state.fighters[e.seat]
         const p = worldToScreen(f.x, f.y - 26)
@@ -99,6 +120,7 @@ export function createRenderer(canvas, assets) {
       } else if (e.type === 'roundEnd') {
         screenShake(e.reason === 'ringout' ? 15 : 6, 0.4)
         freeze(0.12)
+        cheerT = 1
         banner = {
           text: e.reason === 'ringout' ? 'RING OUT!' : 'TIME!',
           sub: `${e.winner.toUpperCase()} TAKES ROUND ${e.round}`,
@@ -128,8 +150,16 @@ export function createRenderer(canvas, assets) {
   }
 
   // ------------------------------------------------------------ backdrop ----
-  function drawBackdrop() {
-    ctx.fillStyle = CONFIG.colors.bg
+  /**
+   * The same layered venue as the lobby: sky, floor, twin pavilion roofs,
+   * bright crowd, orange rail, lanterns on cords. No fades, no scrims - the
+   * layers themselves carry the depth.
+   */
+  function drawBackdrop(dt) {
+    crowdWave += dt
+    if (cheerT > 0) cheerT = Math.max(0, cheerT - dt / 1.2)
+
+    ctx.fillStyle = SKY
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
     // Everything arena-side is clipped below the HUD band.
@@ -138,107 +168,157 @@ export function createRenderer(canvas, assets) {
     ctx.rect(0, HUD_H, CANVAS_W, CANVAS_H - HUD_H)
     ctx.clip()
 
+    // floor, with a lit apron the clay sits in
+    ctx.fillStyle = FLOOR
+    ctx.fillRect(0, RAIL_Y + RAIL_H, CANVAS_W, CANVAS_H - RAIL_Y - RAIL_H)
+    ctx.fillStyle = FLOOR_EDGE
+    ctx.beginPath()
+    const apronR = CONFIG.ring.radius * 1.24 * 1.5
+    ctx.ellipse(PROJ.cx, PROJ.cy + 16, apronR, apronR * PROJ.squash, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // the stands: ONE front row of the sheet, drawn big enough that each
+    // spectator is a person, swaying per tile
     const crowd = assets.arena.crowd
     if (crowd) {
-      const h = 132
-      const w = (crowd.width / crowd.height) * h
-      const bob = Math.sin(crowdWave * 2) * 2
-      for (let x = -w; x < CANVAS_W + w; x += w) ctx.drawImage(crowd, x, HUD_H + 44 + bob, w, h)
+      const srcH = crowd.height * CROWD_SRC
+      const w = (crowd.width / srcH) * CROWD_H
+      const energy = 1.6 + cheerT * 6
+      let i = 0
+      for (let x = -w; x < CANVAS_W + w; x += w, i++) {
+        const bob = Math.sin(crowdWave * (1.2 + cheerT * 1.8) + i * 0.7) * energy
+        ctx.drawImage(crowd, 0, 0, crowd.width, srcH, x, CROWD_TOP + bob, w, CROWD_H)
+      }
     }
 
-    // The shrine roof hangs in FRONT of the stands, not behind them.
-    const roof = assets.arena.roof
-    if (roof) {
-      const h = 112
-      const w = (roof.width / roof.height) * h
-      ctx.drawImage(roof, CANVAS_W / 2 - w / 2, HUD_H - 4, w, h)
-    }
+    // The lanterns hang straight off the HUD beam - the one structure this
+    // scene actually has overhead. (A pavilion roof floating on the crowd
+    // with nothing holding it up read as a sticker, so there isn't one here.)
+    const eaves = [-1, 1].map((side) => ({ x: CANVAS_W / 2 + side * 246, y: HUD_H, w: 0, side }))
 
+    // the full-house banners in the corners, hung over the stands
     const bn = assets.arena.banner
     if (bn) {
-      const h = 50
+      const h = 44
       const w = (bn.width / bn.height) * h
-      ctx.drawImage(bn, 22, HUD_H + 6, w, h)
+      const y = CROWD_TOP + 6
+      ctx.drawImage(bn, 18, y + Math.sin(crowdWave * 0.9) * 1.5, w, h)
       ctx.save()
-      ctx.translate(CANVAS_W - 22, HUD_H + 6)
+      ctx.translate(CANVAS_W - 18, y + Math.sin(crowdWave * 0.9 + 1.2) * 1.5)
       ctx.scale(-1, 1)
       ctx.drawImage(bn, 0, 0, w, h)
       ctx.restore()
     }
 
-    // Fade the crowd into the dark so the ring is unambiguously the subject.
-    const fadeTop = HUD_H + 130
-    const grad = ctx.createLinearGradient(0, fadeTop, 0, fadeTop + 74)
-    grad.addColorStop(0, 'rgba(20,11,26,0)')
-    grad.addColorStop(1, CONFIG.colors.bg)
-    ctx.fillStyle = grad
-    ctx.fillRect(0, fadeTop, CANVAS_W, 74)
+    // the rail the crowd sits behind, in the same orange as their own tiers
+    ctx.fillStyle = '#8a4a24'
+    ctx.fillRect(0, RAIL_Y, CANVAS_W, RAIL_H)
+    ctx.fillStyle = '#c96a30'
+    ctx.fillRect(0, RAIL_Y, CANVAS_W, 3)
+    ctx.fillStyle = WOOD_DARK
+    ctx.fillRect(0, RAIL_Y + RAIL_H - 3, CANVAS_W, 3)
+
+    // lanterns on cords from the beam, flickering like lamps do
+    if (eaves) {
+      for (const e of eaves) {
+        const drift = Math.sin(crowdWave * 0.7 + (e.side > 0 ? 1.9 : 0)) * 2
+        const flick = 0.86 + 0.14 * Math.sin(crowdWave * 2.6 + e.side * 1.3) * Math.sin(crowdWave * 1.7)
+        const x = e.x + drift
+        const lh = 34
+        const lw = lh * 0.62
+        const cord = 34 // body hangs over the stands, well above the rail
+        ctx.fillStyle = WOOD_EDGE
+        ctx.fillRect(x - 1, e.y, 3, cord)
+        const ly = e.y + cord
+        const bodyH = lh * 0.62
+        // outlined like every other pixel object, so it reads over the bright
+        // crowd instead of dissolving into it
+        ctx.fillStyle = WOOD_EDGE
+        ctx.fillRect(x - lw / 2 - 2, ly, lw + 4, bodyH + 10)
+        ctx.fillStyle = '#c96a30'
+        ctx.fillRect(x - lw * 0.34, ly, lw * 0.68, 5)
+        ctx.globalAlpha = flick
+        ctx.fillStyle = '#ffe9c7'
+        ctx.fillRect(x - lw / 2, ly + 5, lw, bodyH)
+        ctx.globalAlpha = 1
+        ctx.fillStyle = 'rgba(42,33,25,0.4)'
+        for (let i = 1; i < 3; i++) ctx.fillRect(x - lw / 2, ly + 5 + (bodyH * i) / 3, lw, 2)
+        ctx.fillStyle = '#c96a30'
+        ctx.fillRect(x - lw * 0.34, ly + 5 + bodyH, lw * 0.68, 5)
+      }
+    }
     ctx.restore()
   }
 
-  function ellipse(cx, cy, r, fill, stroke, lw = 0) {
+  // ------------------------------------------------------------ ringside ----
+  /**
+   * The gyoji, officiating from the far-left of the clay - off the action
+   * axis, the way a real one stands, and clear of the countdown numbers.
+   */
+  function drawGyoji(state) {
+    const img = assets.arena.referee
+    if (!img) return
+    // A whole adult, on the same scale ladder as the fighters - smaller only
+    // because he stands on the far side of the clay.
+    const h = 78
+    const w = (img.width / img.height) * h
+    const bob = Math.sin(crowdWave * 1.4) * 1.2
+    // He leans with the action: drifts a touch toward the fighters' midpoint.
+    const mid = (state.fighters.p1.x + state.fighters.p2.x) / 2
+    const base = worldToScreen(-CONFIG.ring.radius * 0.6, -CONFIG.ring.radius * 0.66)
+    const x = base.x + mid * 0.1
+    const y = base.y + bob
+    ctx.save()
+    ctx.globalAlpha = 0.3
+    ctx.fillStyle = '#000'
     ctx.beginPath()
-    ctx.ellipse(cx, cy, r * PROJ.scale, r * PROJ.scale * PROJ.squash, 0, 0, Math.PI * 2)
-    if (fill) {
-      ctx.fillStyle = fill
-      ctx.fill()
-    }
-    if (stroke) {
-      ctx.lineWidth = lw
-      ctx.strokeStyle = stroke
-      ctx.stroke()
+    ctx.ellipse(x, y + 1, w * 0.3, 4.5, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    ctx.drawImage(img, x - w / 2, y - h, w, h)
+  }
+
+  /**
+   * Front-row patrons on their zabuton, flanking the ring where the shimpan
+   * would sit. They live on the near floor, so they draw over everything.
+   */
+  function drawRingsideFans() {
+    const cu = assets.arena.cushions
+    // Foreground patrons: the NEAREST people in the scene after the fighters,
+    // so they read big - faces you could greet, not specks in a corner.
+    const spots = [
+      { img: assets.fans?.monk, x: 116, y: 526, h: 78, phase: 0 },
+      { img: assets.fans?.lady, x: 806, y: 516, h: 74, phase: 1.6 },
+      { img: assets.fans?.girl, x: 886, y: 534, h: 64, phase: 3.1 },
+    ]
+    for (const s of spots) {
+      if (!s.img) continue
+      const bob = Math.sin(crowdWave * 1.1 + s.phase) * 1.4 + cheerT * Math.abs(Math.sin(crowdWave * 7 + s.phase)) * 4
+      if (cu) {
+        const ch = 30
+        const cw = (cu.width / cu.height) * ch
+        ctx.drawImage(cu, s.x - cw / 2, s.y - ch, cw, ch)
+      }
+      // seated INTO the zabuton: their base sinks past its top edge
+      const w = (s.img.width / s.img.height) * s.h
+      ctx.drawImage(s.img, s.x - w / 2, s.y - s.h - 10 - bob, w, s.h)
     }
   }
 
   /**
    * The dohyo, drawn from the live ring radius so the boundary on screen is
-   * exactly where a ring-out triggers.
+   * exactly where a ring-out triggers. The drawing itself is shared with the
+   * lobby attract screen.
    */
-  function drawDohyo(state) {
-    const r = state.ring.radius
-    const cx = PROJ.cx
-    const cy = PROJ.cy
-
-    // clay block: a fixed slab with a visible side face
-    const blockR = r * 1.24
-    const blockH = 44
-    ctx.save()
-    ellipse(cx, cy + blockH, blockR, '#8a4a24')
-    ctx.fillStyle = '#8a4a24'
-    ctx.fillRect(cx - blockR * PROJ.scale, cy, blockR * PROJ.scale * 2, blockH)
-    ellipse(cx, cy, blockR, '#c96a30')
-    ellipse(cx, cy, blockR * 0.97, '#b25a28')
-    ctx.restore()
-
-    // sand
-    ellipse(cx, cy, r, CONFIG.colors.ringSand)
-    ellipse(cx, cy, r * 0.985, '#e2b070')
-
-    // tawara: the straw bales, drawn as chunks around the live circle
-    const bales = 40
-    ctx.save()
-    for (let i = 0; i < bales; i++) {
-      const a = (i / bales) * Math.PI * 2
-      const bx = cx + Math.cos(a) * r * PROJ.scale
-      const by = cy + Math.sin(a) * r * PROJ.scale * PROJ.squash
-      ctx.fillStyle = i % 2 ? '#e08a3c' : '#c96a30'
-      ctx.fillRect(bx - 5, by - 4, 10, 8)
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'
-      ctx.fillRect(bx - 5, by + 2, 10, 2)
-    }
-    ctx.restore()
-
-    // hard boundary line - this is exactly where a ring-out triggers
-    ellipse(cx, cy, r, null, CONFIG.colors.ringRope, 3)
-
-    // the two shikiri lines in the middle
-    ctx.save()
-    ctx.fillStyle = '#fff6e2'
-    const lw = 6
-    const lh = r * PROJ.scale * PROJ.squash * 0.34
-    ctx.fillRect(cx - 34, cy - lh / 2, lw, lh)
-    ctx.fillRect(cx + 28, cy - lh / 2, lw, lh)
-    ctx.restore()
+  function drawRing(state) {
+    drawDohyo(ctx, {
+      cx: PROJ.cx,
+      cy: PROJ.cy,
+      r: state.ring.radius * PROJ.scale,
+      squash: PROJ.squash,
+      sand: CONFIG.colors.ringSand,
+      rope: CONFIG.colors.ringRope,
+    })
   }
 
   function drawShadow(x, y, radius) {
@@ -251,11 +331,29 @@ export function createRenderer(canvas, assets) {
     ctx.restore()
   }
 
-  function drawFighter(seat, state, dt) {
+  const SKIN_BY_ID = Object.fromEntries(CONFIG.skins.list.map((s) => [s.id, s]))
+
+  /**
+   * A skin is a real sheet set (dir skins) or a colour grade over the base
+   * sheet (filter skins). Two identical wrestlers would be unreadable, so a
+   * matching P2 yields and falls back to a different skin.
+   */
+  function seatSkin(seat, meta) {
+    const skins = meta?.skins || CONFIG.skins.defaults
+    let id = skins[seat] || CONFIG.skins.defaults[seat]
+    if (seat === 'p2' && id === (skins.p1 || CONFIG.skins.defaults.p1)) {
+      id = CONFIG.skins.list.find((s) => s.id !== id)?.id || id
+    }
+    return SKIN_BY_ID[id] || SKIN_BY_ID[CONFIG.skins.defaults[seat]]
+  }
+
+  function drawFighter(seat, state, dt, meta) {
     const f = state.fighters[seat]
     const anim = animators[seat]
     anim.update(f.anim, dt)
-    const { image, index } = anim.frame(assets.sumo)
+    const skin = seatSkin(seat, meta)
+    const sheets = (skin?.dir && assets.skinSheets?.[skin.id]) || assets.sumo
+    const { image, index } = anim.frame(sheets)
 
     const pos = worldToScreen(f.x, f.y)
     const bodyR = bodyRadiusFromWeight(f.weight)
@@ -265,10 +363,10 @@ export function createRenderer(canvas, assets) {
     drawShadow(pos.x, pos.y, bodyR * PROJ.scale * 0.95)
 
     ctx.save()
-    let filter = seat === 'p2' ? 'hue-rotate(185deg) saturate(1.4)' : ''
+    let filter = skin?.filter || ''
     if (f.mangoFlash > 0) filter += ' brightness(1.45) saturate(1.6)'
     if (f.parry) filter += ' brightness(1.3)'
-    if (filter) ctx.filter = filter.trim()
+    if (filter.trim()) ctx.filter = filter.trim()
     drawFrame(ctx, image, index, pos.x - size / 2, pos.y - size + 10, size, size, flip)
     ctx.restore()
 
@@ -335,65 +433,92 @@ export function createRenderer(canvas, assets) {
   }
 
   // ----------------------------------------------------------------- hud ----
+  /** The band is the venue's dark beam; each fighter gets a wooden plaque. */
   function drawHudBand() {
     ctx.save()
-    ctx.fillStyle = '#1c1029'
+    ctx.fillStyle = SKY
     ctx.fillRect(0, 0, CANVAS_W, HUD_H)
-    ctx.fillStyle = '#0c0714'
-    ctx.fillRect(0, HUD_H - 5, CANVAS_W, 5)
+    ctx.fillStyle = WOOD_EDGE
+    ctx.fillRect(0, HUD_H - 4, CANVAS_W, 4)
     ctx.restore()
   }
 
   function drawSeatPanel(seat, state, meta, side) {
     const f = state.fighters[seat]
-    const w = 340
-    const x = side === 'left' ? 18 : CANVAS_W - 18 - w
-    const y = 10
+    const w = 330
+    const x = side === 'left' ? 14 : CANVAS_W - 14 - w
+    const y = 8
+    const h = 66
     const color = seat === 'p1' ? CONFIG.colors.p1 : CONFIG.colors.p2
+    const left = side === 'left'
 
     ctx.save()
+    // the plaque: wood, hard border, lit top edge, and the fighter's colour
+    // running down the outer edge like a corner post wrap
+    ctx.fillStyle = WOOD_EDGE
+    ctx.fillRect(x - 3, y - 3, w + 6, h + 6)
+    ctx.fillStyle = WOOD_DARK
+    ctx.fillRect(x, y, w, h)
+    ctx.fillStyle = WOOD_LITE
+    ctx.fillRect(x, y, w, 2)
+    ctx.fillStyle = color
+    ctx.fillRect(left ? x : x + w - 5, y, 5, h)
+
     ctx.textBaseline = 'top'
-    ctx.textAlign = side === 'left' ? 'left' : 'right'
-    const tx = side === 'left' ? x + 12 : x + w - 12
+    const tx = left ? x + 16 : x + w - 16
+    ctx.textAlign = left ? 'left' : 'right'
     ctx.font = PIX(13)
     ctx.fillStyle = color
     ctx.fillText((meta?.names?.[seat] || seat.toUpperCase()).slice(0, 12), tx, y + 9)
 
-    // round pips, under the name, so they can't be mistaken for the weight bar
+    // round pips on the opposite corner of the name, carved sockets
     const won = state.rounds[seat] || 0
     for (let i = 0; i < CONFIG.match.roundsToWin; i++) {
-      const px = side === 'left' ? x + 12 + i * 16 : x + w - 20 - i * 16
-      ctx.fillStyle = i < won ? color : 'rgba(255,255,255,0.16)'
-      ctx.fillRect(px, y + 28, 11, 11)
+      const px = left ? x + w - 26 - i * 17 : x + 14 + i * 17
+      ctx.fillStyle = WOOD_EDGE
+      ctx.fillRect(px - 1, y + 8, 14, 14)
+      ctx.fillStyle = i < won ? color : 'rgba(255,233,199,0.12)'
+      ctx.fillRect(px + 1, y + 10, 10, 10)
     }
 
-    // Full at the starting weight; mango overfill rides on top in gold so
-    // being over 100 reads as a bonus rather than as a bar that never fills.
-    const barX = x + 12
-    const barY = y + 46
-    const barW = w - 24
+    // the combo tally lives under the pips, clear of the name
+    if (f.combo.count >= 2) {
+      ctx.textAlign = left ? 'right' : 'left'
+      ctx.font = PIX(8)
+      ctx.fillStyle = CONFIG.colors.good
+      ctx.fillText(`COMBO x${f.combo.count}`, left ? x + w - 14 : x + 14, y + 27)
+    }
+
+    // weight bar in a carved slot with tick marks; mango overfill rides on
+    // top in cream so being over 100 reads as a bonus rather than a bar that
+    // never fills. Anchored at the outer edge on both sides, filling inward,
+    // so the two plaques mirror each other across the clock.
+    const barW = w - 74
+    const barX = left ? x + 16 : x + w - 16 - barW
+    const barY = y + 40
+    const barH = 16
     const { base, over } = weightBarFractions(f.weight)
-    ctx.fillStyle = '#0c0714'
-    ctx.fillRect(barX, barY, barW, 10)
+    ctx.fillStyle = WOOD_EDGE
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4)
+    ctx.fillStyle = '#150e09'
+    ctx.fillRect(barX, barY, barW, barH)
     ctx.fillStyle = color
-    ctx.fillRect(barX, barY, barW * base, 10)
+    if (left) ctx.fillRect(barX, barY, barW * base, barH)
+    else ctx.fillRect(barX + barW * (1 - base), barY, barW * base, barH)
     if (over > 0) {
       ctx.fillStyle = '#fff3c4'
-      ctx.fillRect(barX, barY, barW * over, 10)
+      if (left) ctx.fillRect(barX, barY, barW * over, barH)
+      else ctx.fillRect(barX + barW * (1 - over), barY, barW * over, barH)
     }
+    // ticks carve the bar into segments, so a chip of damage reads at a glance
+    ctx.fillStyle = 'rgba(13,8,5,0.4)'
+    for (let px = barX + 24; px < barX + barW; px += 24) ctx.fillRect(px, barY, 2, barH)
 
-    ctx.textAlign = side === 'left' ? 'right' : 'left'
-    ctx.font = PIX(10)
-    ctx.fillStyle = over > 0 ? '#fff3c4' : '#c9b8d6'
-    ctx.fillText(String(Math.round(f.weight)), side === 'left' ? x + w - 2 : x + 2, y + 30)
-    ctx.textAlign = side === 'left' ? 'left' : 'right'
-
-    if (f.combo.count >= 2) {
-      ctx.textAlign = side === 'left' ? 'left' : 'right'
-      ctx.font = PIX(9)
-      ctx.fillStyle = CONFIG.colors.good
-      ctx.fillText(`COMBO x${f.combo.count}`, tx, y + 62)
-    }
+    // the number sits at the bar's open end, toward the clock
+    ctx.textAlign = left ? 'left' : 'right'
+    ctx.font = PIX(13)
+    ctx.fillStyle = over > 0 ? '#fff3c4' : '#ffe9c7'
+    ctx.fillText(String(Math.round(f.weight)), left ? barX + barW + 12 : barX - 12, y + 42)
     ctx.restore()
   }
 
@@ -402,21 +527,28 @@ export function createRenderer(canvas, assets) {
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
-    ctx.font = PIX(10)
-    ctx.fillStyle = '#c9b8d6'
-    ctx.fillText(`ROUND ${state.round} OF ${CONFIG.match.maxRounds}`, CANVAS_W / 2, 12)
-    ctx.font = PIX(34)
-    const urgent = secs <= 10 && state.phase === 'fighting'
-    ctx.fillStyle = urgent ? CONFIG.colors.warn : CONFIG.colors.ink
-    ctx.fillText(String(Math.ceil(secs)).padStart(2, '0'), CANVAS_W / 2, 32)
-    // Mangoes are the leaderboard currency, so both tallies stay on screen.
     ctx.font = PIX(8)
-    ctx.fillStyle = '#c9b8d6'
-    ctx.fillText(
-      `MANGOES  ${state.stats.p1.mangoes}  -  ${state.stats.p2.mangoes}`,
-      CANVAS_W / 2,
-      72
-    )
+    ctx.fillStyle = 'rgba(255,233,199,0.5)'
+    ctx.fillText(`ROUND ${state.round} OF ${CONFIG.match.maxRounds}`, CANVAS_W / 2, 10)
+    ctx.font = PIX(32)
+    const urgent = secs <= 10 && state.phase === 'fighting'
+    ctx.fillStyle = urgent ? CONFIG.colors.warn : '#ffe9c7'
+    ctx.fillText(String(Math.ceil(secs)).padStart(2, '0'), CANVAS_W / 2, 26)
+
+    // Mangoes are the leaderboard currency: each side's haul flanks the clock
+    // as icon + count, no label needed.
+    const my = 34
+    ctx.font = PIX(13)
+    for (const [seat, dir] of [
+      ['p1', -1],
+      ['p2', 1],
+    ]) {
+      const cx = CANVAS_W / 2 + dir * 88
+      if (assets.mango) ctx.drawImage(assets.mango, cx - (dir < 0 ? 24 : -6), my, 18, 18)
+      ctx.textAlign = dir < 0 ? 'right' : 'left'
+      ctx.fillStyle = 'rgba(255,233,199,0.85)'
+      ctx.fillText(String(state.stats[seat].mangoes), cx + (dir < 0 ? -30 : 30), my + 3)
+    }
     ctx.restore()
   }
 
@@ -427,7 +559,8 @@ export function createRenderer(canvas, assets) {
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.translate(CANVAS_W / 2, CANVAS_H / 2 - 30)
+    // over the sand between the fighters, not over the crowd
+    ctx.translate(CANVAS_W / 2, PROJ.cy - 34)
     ctx.scale(1 + (1 - frac) * 0.25, 1 + (1 - frac) * 0.25)
     ctx.font = PIX(72)
     ctx.fillStyle = '#0c0714'
@@ -454,7 +587,7 @@ export function createRenderer(canvas, assets) {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     // A backing plate, so the callout reads over the crowd or the sand alike.
-    ctx.fillStyle = 'rgba(12,7,20,0.82)'
+    ctx.fillStyle = 'rgba(13,8,5,0.84)'
     ctx.fillRect(-CANVAS_W / 2, banner.sub ? -46 : -36, CANVAS_W, banner.sub ? 108 : 72)
     ctx.font = PIX(46)
     ctx.fillStyle = '#0c0714'
@@ -474,34 +607,41 @@ export function createRenderer(canvas, assets) {
   function drawWaitingForReady(state, meta) {
     if (state.phase !== 'ready') return
     ctx.save()
-    ctx.fillStyle = 'rgba(12,7,20,0.82)'
+    ctx.fillStyle = 'rgba(13,8,5,0.86)'
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.font = PIX(26)
     ctx.fillStyle = CONFIG.colors.ink
-    ctx.fillText('READ THE RULES ON YOUR PHONE', CANVAS_W / 2, CANVAS_H / 2 - 60)
+    ctx.fillText('PICK YOUR WRESTLER ON YOUR PHONE', CANVAS_W / 2, CANVAS_H / 2 - 60)
     ctx.font = PIX(13)
-    ctx.fillStyle = '#c9b8d6'
-    ctx.fillText('TAP READY TO BEGIN', CANVAS_W / 2, CANVAS_H / 2 - 20)
+    ctx.fillStyle = 'rgba(255,233,199,0.6)'
+    ctx.fillText('THEN TAP READY', CANVAS_W / 2, CANVAS_H / 2 - 20)
 
     SEATS.forEach((seat, i) => {
       const x = CANVAS_W / 2 + (i === 0 ? -170 : 170)
       const isReady = meta?.ready?.[seat]
+      // A bot seat with somebody in the room holding no seat is not "ready" -
+      // it is an invitation. Saying so here is what turns the ready gate into
+      // the moment the next challenger takes the seat that just opened.
+      const claimable = meta?.seatKind?.[seat] === 'bot' && meta?.challengerWaiting
       const color = seat === 'p1' ? CONFIG.colors.p1 : CONFIG.colors.p2
-      ctx.fillStyle = isReady ? CONFIG.colors.good : 'rgba(255,255,255,0.12)'
+      ctx.fillStyle = claimable ? 'rgba(255,206,84,0.16)' : isReady ? CONFIG.colors.good : 'rgba(255,255,255,0.12)'
       ctx.fillRect(x - 130, CANVAS_H / 2 + 24, 260, 62)
       ctx.font = PIX(14)
-      ctx.fillStyle = isReady ? '#0c1a0e' : color
-      ctx.fillText((meta?.names?.[seat] || seat.toUpperCase()).slice(0, 12), x, CANVAS_H / 2 + 44)
+      ctx.fillStyle = claimable ? color : isReady ? '#0c1a0e' : color
+      ctx.fillText(
+        claimable ? 'SEAT OPEN' : (meta?.names?.[seat] || seat.toUpperCase()).slice(0, 12),
+        x,
+        CANVAS_H / 2 + 44
+      )
       ctx.font = PIX(11)
-      ctx.fillText(isReady ? 'READY' : 'WAITING…', x, CANVAS_H / 2 + 68)
+      ctx.fillText(claimable ? 'CLAIM IT ON YOUR PHONE' : isReady ? 'READY' : 'WAITING…', x, CANVAS_H / 2 + 68)
     })
     ctx.restore()
   }
 
   function draw(state, dt, meta) {
-    crowdWave += dt
     if (hitstop > 0) {
       hitstop = Math.max(0, hitstop - dt)
       dt = 0
@@ -514,13 +654,15 @@ export function createRenderer(canvas, assets) {
 
     ctx.save()
     ctx.translate(ox, oy)
-    drawBackdrop()
-    drawDohyo(state)
+    drawBackdrop(dt)
+    drawRing(state)
+    drawGyoji(state)
 
     // paint back-to-front so the nearer sumo overlaps the further one
     const order = [...SEATS].sort((a, b) => state.fighters[a].y - state.fighters[b].y)
-    for (const seat of order) drawFighter(seat, state, dt)
+    for (const seat of order) drawFighter(seat, state, dt, meta)
     drawParticles()
+    drawRingsideFans()
 
     drawHudBand()
     drawSeatPanel('p1', state, meta, 'left')
