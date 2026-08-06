@@ -1,13 +1,9 @@
-// The fight controls. Thumbs live at the BOTTOM of a phone, so that is where
-// both halves sit: joystick bottom-left, the two arcade buttons bottom-right.
+// The fight controls, laid out for a phone held SIDEWAYS: joystick under the
+// left thumb, the two arcade buttons under the right.
 //
-// The buttons are offset on a diagonal with B (PUSH) above and A (HIT) below.
-// A is the button you press most, so it gets the lower, easier reach, and the
-// gap between them is deliberately small enough to mash both with one thumb -
-// that is the parry.
-//
-// This module only ever reports raw button state. Whether a press is a hit, a
-// push or a parry is decided by the host.
+// A is the button you press most - tap for the jab, hold it and the guard
+// comes up. B is the push. This module only ever reports raw button state;
+// what a press means is decided by the host.
 
 export function mountController(root, { onChange } = {}) {
   root.innerHTML = `
@@ -19,9 +15,9 @@ export function mountController(root, { onChange } = {}) {
       <div id="btnzone" class="btnzone">
         <div class="btncluster">
           <button id="btnB" class="arcadebtn bbtn" aria-label="Push">B<span class="btnsub">PUSH</span></button>
-          <button id="btnA" class="arcadebtn abtn" aria-label="Hit">A<span class="btnsub">HIT</span></button>
+          <button id="btnA" class="arcadebtn abtn" aria-label="Hit, hold to parry">A<span class="btnsub">HIT</span></button>
         </div>
-        <div class="padlabel">A+B = PARRY</div>
+        <div class="padlabel">HOLD A = PARRY</div>
       </div>
     </div>
   `
@@ -64,6 +60,7 @@ export function mountController(root, { onChange } = {}) {
     knob.style.transform = `translate(${dx}px, ${dy}px)`
     move.x = joyRadius ? dx / joyRadius : 0
     move.y = joyRadius ? dy / joyRadius : 0
+    send()
   }
 
   function endJoy(e) {
@@ -72,6 +69,7 @@ export function mountController(root, { onChange } = {}) {
     move.x = 0
     move.y = 0
     knob.style.transform = 'translate(0px, 0px)'
+    send()
   }
 
   joyzone.addEventListener('pointerdown', onJoyDown)
@@ -97,10 +95,12 @@ export function mountController(root, { onChange } = {}) {
       setDown(true)
       el.classList.add('held')
       vibrate(15)
+      send() // the press leaves the phone on the same event that made it
     })
     const release = () => {
       setDown(false)
       el.classList.remove('held')
+      send()
     }
     el.addEventListener('pointerup', release)
     el.addEventListener('pointercancel', release)
@@ -109,17 +109,26 @@ export function mountController(root, { onChange } = {}) {
   wireButton(btnA, (v) => (aDown = v))
   wireButton(btnB, (v) => (bDown = v))
 
-  let raf = requestAnimationFrame(function loop() {
-    onChange?.({ move: { x: move.x, y: move.y }, a: aDown, b: bDown })
-    raf = requestAnimationFrame(loop)
-  })
+  // Input is sent the INSTANT anything changes (press, release, stick move),
+  // with a 30Hz interval as keepalive. Never rAF: a backgrounded tab throttles
+  // rAF to zero, which silently freezes the controller.
+  const send = () => onChange?.({ move: { x: move.x, y: move.y }, a: aDown, b: bDown })
+  const timer = setInterval(send, 33)
 
   return {
     setParryGlow(on) {
       root.querySelector('.btnzone')?.classList.toggle('parryglow', !!on)
     },
+    /** A parry just LANDED: flash the whole pad edge for a beat. */
+    pulseParry() {
+      const wrap = root.querySelector('.padwrap')
+      if (!wrap) return
+      wrap.classList.remove('parryhit')
+      void wrap.offsetWidth // restart the animation
+      wrap.classList.add('parryhit')
+    },
     destroy() {
-      cancelAnimationFrame(raf)
+      clearInterval(timer)
     },
   }
 }

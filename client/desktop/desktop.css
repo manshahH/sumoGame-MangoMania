@@ -1,5 +1,14 @@
 /* The desktop is a TV or a laptop on a table at an event. Nothing ever
-   scrolls: the lobby fits, and the fight is edge to edge. */
+   scrolls: the lobby fits, and the fight is edge to edge.
+
+   The lobby is the attract screen of a cabinet. The canvas paints the venue
+   and publishes its geometry (--ring-cx / --btn-y / --p1x / --p2x / --namey);
+   everything HTML-side is an OBJECT in that venue - a hung sign, a nailed-up
+   notice, a wall plaque, a cabinet button - built from flat fills, chunky
+   pixel borders and hard offset shadows. No blur anywhere, no glow, no cards.
+
+   Palette: cream, dark wood browns, mango, player blue, the rope's muted red.
+   Green exists only inside the network LED. */
 
 html,
 body.desktop {
@@ -10,6 +19,8 @@ body.desktop {
 body.desktop {
   display: flex;
   flex-direction: column;
+  background: #150e09;
+  background-image: none;
 }
 
 .screenview {
@@ -26,86 +37,275 @@ body.desktop {
 }
 
 /* --------------------------------------------------------------- lobby --- */
-.lobbyhead {
+/* Two fonts only: the pixel font speaks for the game (title, room code, high
+   scores, the cabinet button, READY), Inter for everything human. */
+#screen-lobby {
+  position: relative;
+  overflow: hidden;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --cream: #ffe9c7;
+  --mango: #ffce54;
+  --blue: #5cc8ff;
+  --wood: #3a2417;
+  --wood-dark: #241610;
+  --wood-edge: #0d0805;
+  --wood-lite: #56381f;
+  --rope-red: #a5462a;
+
+  --t-hero: clamp(26px, min(4.2vw, 7vh), 68px);
+  --t-body: clamp(12px, 0.9vw, 17px);
+  --t-caption: clamp(10px, 0.66vw, 12px);
+
+  --pad-x: clamp(20px, 2.6vw, 64px);
+  --pad-y: clamp(14px, 2.2vh, 30px);
+  --col: clamp(210px, 16vw, 320px);
+
+  /* the one hard shadow recipe every object shares */
+  --obj-shadow: 0 6px 0 var(--wood-edge), 10px 14px 0 rgba(13, 8, 5, 0.35);
+}
+
+.attractcanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lobbyui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.22s linear;
+}
+
+.lobbyui button {
+  pointer-events: auto;
+}
+
+#screen-lobby.zooming .lobbyui {
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------- top bar --- */
+.topbar {
+  position: absolute;
+  top: var(--pad-y);
+  left: var(--pad-x);
+  right: var(--pad-x);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 24px;
-  border-bottom: 4px solid var(--edge);
-  background: var(--panel);
-  flex: none;
+  font-size: var(--t-caption);
 }
 
-#brand {
-  font-size: 24px;
-  color: var(--p1);
-  letter-spacing: 0.05em;
-  margin-bottom: 6px;
+.hostline {
+  color: rgba(255, 233, 199, 0.4);
+  letter-spacing: 0.06em;
 }
 
-.statuschip {
+.hostline .cross {
+  opacity: 0.45;
+  margin: 0 0.35em;
+}
+
+.statusline {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 3px solid var(--edge);
-  background: var(--panel-hi);
-  font-size: 9px;
+  gap: clamp(10px, 1.2vw, 22px);
 }
 
-.lobbygrid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: 24px;
-  padding: 24px;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-  align-items: start;
-}
-
-.panel-title {
-  font-size: 10px;
-  padding: 12px 16px;
-  border-bottom: 4px solid var(--edge);
-  color: #c9b8d6;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.panel-body {
-  padding: 16px;
-}
-
-.joinbody {
+.netpill {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 233, 199, 0.38);
+}
+
+/* The only green pixel on the screen. It idles with a slow blink. */
+.netpill .led {
+  width: 8px;
+  height: 8px;
+  border: none;
+  background: rgba(255, 233, 199, 0.18);
+}
+
+.netpill .led.on {
+  background: var(--good);
+  box-shadow: none;
+  animation: ledblink 2.4s steps(1) infinite;
+}
+
+@keyframes ledblink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 0.35;
+  }
+}
+
+.tinybtn {
+  font: inherit;
+  color: rgba(255, 233, 199, 0.45);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.tinybtn:hover {
+  color: var(--cream);
+}
+
+/* ------------------------------------------------------------- marquee --- */
+/* The arena sign: a dark plank hung on two ropes, the event banner above it,
+   the game's name on it. It hangs in front of the temple roof - that overlap
+   is the depth. */
+.marquee {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-top: clamp(34px, 6vh, 66px);
   text-align: center;
 }
 
-.roomcode {
-  font-size: 44px;
-  letter-spacing: 0.12em;
-  color: var(--p1);
-  line-height: 1;
+.eventline {
+  text-transform: uppercase;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em; /* recenters tracked-out caps */
+  font-size: var(--t-caption);
+  font-weight: 600;
+  color: rgba(255, 233, 199, 0.5);
+  margin-bottom: clamp(8px, 1.3vh, 16px);
 }
 
-/* The QR is the single most important pixel area in the lobby: dark modules on
-   a bright cream ground, big enough to scan from a couple of metres. */
+.plank {
+  position: relative;
+  background: var(--wood-dark);
+  border: 4px solid var(--wood-edge);
+  box-shadow: var(--obj-shadow);
+  padding: clamp(14px, 2.2vh, 26px) clamp(24px, 2.6vw, 52px) clamp(12px, 2vh, 22px);
+}
+
+/* the ropes it hangs from, running up off the top of the screen */
+.plank::before,
+.plank::after {
+  content: '';
+  position: absolute;
+  top: -240px;
+  width: 4px;
+  height: 240px;
+  background: var(--wood-lite);
+}
+
+.plank::before {
+  left: 16%;
+}
+
+.plank::after {
+  right: 16%;
+}
+
+#brand {
+  font-family: 'Press Start 2P', monospace;
+  font-size: var(--t-hero);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--mango);
+  animation: shimmer 9s steps(1) infinite;
+}
+
+/* every nine seconds the sign catches the light for a frame or two */
+@keyframes shimmer {
+  0%,
+  100% {
+    color: var(--mango);
+  }
+  94% {
+    color: #ffe9a8;
+  }
+  96% {
+    color: var(--mango);
+  }
+}
+
+.tagline {
+  margin: clamp(10px, 1.5vh, 18px) 0 0;
+  font-size: var(--t-body);
+  color: rgba(255, 233, 199, 0.55);
+}
+
+/* -------------------------------------------------------------- notice --- */
+/* The tournament notice by the door: wood frame, cream paper, four pins,
+   hung straight - it is the door people walk in through. */
+.notice {
+  position: absolute;
+  left: var(--pad-x);
+  bottom: var(--pad-y);
+  background: var(--wood);
+  border: 4px solid var(--wood-edge);
+  padding: clamp(8px, 1vh, 12px);
+  box-shadow: var(--obj-shadow);
+}
+
+.paper {
+  position: relative;
+  background: var(--cream);
+  padding: clamp(14px, 1.8vh, 22px) clamp(16px, 1.6vw, 26px);
+  text-align: center;
+}
+
+.pin {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--rope-red);
+  box-shadow: 2px 2px 0 rgba(13, 8, 5, 0.3);
+}
+
+.pin.tl {
+  top: 5px;
+  left: 5px;
+}
+.pin.tr {
+  top: 5px;
+  right: 5px;
+}
+.pin.bl {
+  bottom: 5px;
+  left: 5px;
+}
+.pin.br {
+  bottom: 5px;
+  right: 5px;
+}
+
+.noticehead {
+  font-size: var(--t-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--wood-dark);
+  margin: 0 0 clamp(10px, 1.4vh, 16px);
+}
+
 .qrbox {
-  width: 300px;
-  height: 300px;
-  background: var(--ink);
-  padding: 10px;
-  border: 4px solid var(--edge);
+  width: clamp(108px, 13vh, 168px);
+  height: clamp(108px, 13vh, 168px);
+  margin: 0 auto;
+  background: var(--cream);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 9px;
+  color: var(--wood-dark);
 }
 
 .qrbox svg {
@@ -114,84 +314,111 @@ body.desktop {
   display: block;
 }
 
+.roomline {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: clamp(8px, 0.8vw, 14px);
+  margin-top: clamp(10px, 1.4vh, 16px);
+}
+
+.roomlabel {
+  font-size: var(--t-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(36, 22, 16, 0.55);
+}
+
+.roomcode {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(20px, 3.2vh, 38px);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--wood-dark);
+}
+
 .joinurl {
-  font-size: 10px;
-  line-height: 1.6;
+  margin-top: clamp(8px, 1vh, 12px);
+  font-size: var(--t-caption);
+  line-height: 1.4;
   word-break: break-all;
-  color: var(--p2);
+  max-width: clamp(180px, 20vh, 280px);
+  color: rgba(36, 22, 16, 0.55);
 }
 
-.lobbyright {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
+.lannote {
+  position: absolute;
+  left: var(--pad-x);
+  bottom: 4px;
+  font-size: var(--t-caption);
+  letter-spacing: 0.08em;
+  color: rgba(255, 233, 199, 0.16);
 }
 
-.seatcards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+/* ---------------------------------------------------------- scoreboard --- */
+/* The venue's high score board: a wooden plaque with a painted mango title
+   bar, pixel type, generous rows, and unclaimed slots shown as dashes the
+   way an arcade table shows scores nobody has set yet. */
+.scoreboard {
+  position: absolute;
+  right: var(--pad-x);
+  top: clamp(88px, 16vh, 190px);
+  width: var(--col);
+  background: var(--wood-dark);
+  border: 4px solid var(--wood-edge);
+  box-shadow: var(--obj-shadow);
 }
 
-.seatcard {
-  padding: 22px 16px;
+.scorehead {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(12px, 1.6vh, 17px);
+  letter-spacing: 0.05em;
+  color: #3a2005;
+  background: var(--mango);
+  border-bottom: 4px solid var(--wood-edge);
   text-align: center;
+  margin: 0;
+  padding: clamp(10px, 1.5vh, 16px) 8px;
 }
 
-.seatcard h3 {
-  font-size: 22px;
-  margin-bottom: 12px;
+.scorebody {
+  padding: clamp(12px, 1.8vh, 22px) clamp(14px, 1.3vw, 24px) clamp(14px, 2vh, 24px);
 }
 
-.seatcard .who {
-  font-size: 13px;
-  margin-top: 10px;
-  line-height: 1.6;
-}
-
-.seatcard.claimed {
-  border-color: var(--good);
-}
-
-.tierrow {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.champpanel .panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.champline {
-  font-size: 11px;
-  line-height: 1.8;
-}
-
-.lbrow {
+.scorerow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  padding: 7px 8px;
-  background: rgba(0, 0, 0, 0.22);
+  gap: clamp(10px, 0.9vw, 18px);
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(10px, 1.35vh, 15px);
+  color: rgba(255, 233, 199, 0.75);
+  padding: clamp(6px, 1vh, 11px) 0;
 }
 
-.lbrow.top {
-  background: rgba(255, 206, 84, 0.16);
-  color: var(--p1);
+/* the current champion's line is the sign's whole point: mango, and bigger */
+.scorerow.lead {
+  color: var(--mango);
+  font-size: clamp(12px, 1.7vh, 19px);
 }
 
-.lbrank {
-  width: 18px;
+.scorerow.ghost {
+  color: rgba(255, 233, 199, 0.28);
+}
+
+.srank {
   flex: none;
-  opacity: 0.6;
+  width: 1.3em;
+  color: var(--mango);
+  opacity: 0.75;
 }
 
-.lbname {
+.scorerow.ghost .srank {
+  color: inherit;
+  opacity: 1;
+}
+
+.sname {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -199,14 +426,463 @@ body.desktop {
   white-space: nowrap;
 }
 
-.lbmango {
+.scount {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.lbhits {
+.scount img {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.scorerow.ghost .scount img {
+  opacity: 0.4;
+}
+
+.scorehint {
+  font-size: var(--t-caption);
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(255, 233, 199, 0.4);
+  margin: clamp(8px, 1.2vh, 14px) 0 0;
+}
+
+/* who holds the ring right now: the plaque's footer strip */
+.streakline {
+  font-size: var(--t-caption);
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(255, 233, 199, 0.55);
+  background: rgba(13, 8, 5, 0.55);
+  border-top: 3px solid var(--wood-edge);
+  margin: clamp(10px, 1.5vh, 16px) calc(-1 * clamp(14px, 1.3vw, 24px)) calc(-1 * clamp(14px, 2vh, 24px));
+  padding: clamp(8px, 1.2vh, 12px) 10px;
+}
+
+.streakline b {
+  color: var(--mango);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------ character select --- */
+/* Who will you face? Three fighters, each on a wooden nameplate. The chosen
+   one is lit and moving; the others wait in the dark. Dimming is done with
+   brightness, never opacity - they are solid people, just out of the light. */
+.select {
+  position: absolute;
+  right: var(--pad-x);
+  bottom: var(--pad-y);
+  width: var(--col);
+  text-align: right;
+}
+
+.selecthead {
+  font-size: var(--t-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  line-height: 1.7;
+  color: rgba(255, 233, 199, 0.4);
+  margin: 0 0 clamp(10px, 1.5vh, 18px);
+}
+
+.tierrow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: clamp(10px, 1vw, 20px);
+}
+
+.tierpick {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(6px, 1vh, 12px);
+}
+
+/* Square, because the sheet frames are. renderTiers() supplies the sheet and
+   either a fixed pose (waiting) or a 5-frame window the animation walks. */
+.tierart {
+  position: relative;
+  height: clamp(64px, 10vh, 126px);
+  aspect-ratio: 1;
+  background-repeat: no-repeat;
+  filter: brightness(0.68) saturate(0.6);
+  transition: filter 0.15s linear;
+}
+
+/* hard little contact shadow under each fighter's feet */
+.tierart::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 2px;
+  height: 4px;
+  background: rgba(13, 8, 5, 0.45);
+}
+
+.tierpick:hover .tierart {
+  filter: brightness(0.8) saturate(0.85);
+}
+
+.tierpick.on .tierart {
+  filter: none;
+  animation: tieridle 0.9s steps(5) infinite;
+}
+
+@keyframes tieridle {
+  from {
+    background-position-x: 0%;
+  }
+  to {
+    background-position-x: 125%;
+  }
+}
+
+.tiername {
+  font-size: var(--t-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 233, 199, 0.45);
+  background: var(--wood);
+  border: 3px solid var(--wood-edge);
+  box-shadow: 0 3px 0 var(--wood-edge);
+  padding: clamp(4px, 0.6vh, 7px) clamp(8px, 0.7vw, 13px);
+  white-space: nowrap;
+}
+
+.tierpick.on .tiername {
+  color: var(--mango);
+}
+
+.tierhint {
+  margin: clamp(10px, 1.4vh, 16px) 0 0;
+  font-size: var(--t-caption);
+  line-height: 1.5;
+  color: rgba(255, 233, 199, 0.35);
+}
+
+/* ---------------------------------------------------------- nameplates --- */
+/* Small planks standing at each wrestler's feet. */
+.nameplates {
+  position: absolute;
+  inset: 0;
+}
+
+.plate {
+  position: absolute;
+  top: var(--namey, 80%);
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  background: var(--wood);
+  border: 3px solid var(--wood-edge);
+  box-shadow: 0 4px 0 var(--wood-edge), 5px 7px 0 rgba(13, 8, 5, 0.3);
+  padding: clamp(6px, 0.9vh, 10px) clamp(12px, 1.1vw, 20px);
+}
+
+.plate.p1 {
+  left: var(--p1x, 30%);
+}
+
+.plate.p2 {
+  left: var(--p2x, 70%);
+}
+
+.pname {
+  font-size: var(--t-body);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.plate.p1 .pname {
+  color: var(--mango);
+}
+
+.plate.p2 .pname {
+  color: var(--blue);
+}
+
+.plate.open .pname {
+  color: var(--cream);
+  font-size: var(--t-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.psub {
+  margin-top: 4px;
+  font-size: var(--t-caption);
+  letter-spacing: 0.08em;
+  color: rgba(255, 233, 199, 0.42);
+  animation: platepulse 2.6s ease-in-out infinite;
+}
+
+@keyframes platepulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* --------------------------------------------------------- cabinet buttons --- */
+/* The stack in the ring: the mango START key you cannot miss, and the smaller
+   cream HOW TO PLAY key under it. Bevels are inset fills, depth is a solid
+   side, the ground shadow is hard. Pressing pushes a key into its own depth. */
+.ctastack {
+  position: absolute;
+  left: var(--ring-cx, 50%);
+  top: var(--btn-y, 58%);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(14px, 2vh, 24px);
+}
+
+.arcadebtn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(14px, 2.3vh, 26px);
+  line-height: 1;
+  color: #3a2005;
+  text-align: center;
+  background: var(--mango);
+  border: 4px solid var(--wood-edge);
+  padding: clamp(14px, 2.2vh, 24px) clamp(22px, 2.2vw, 42px) clamp(12px, 2vh, 22px);
+  cursor: pointer;
+  box-shadow:
+    inset 0 4px 0 #ffe193,
+    inset 0 -5px 0 #d9a02e,
+    0 7px 0 #a06a12,
+    0 7px 0 4px var(--wood-edge),
+    10px 16px 0 rgba(13, 8, 5, 0.4);
+  animation: btnbreathe 4.5s ease-in-out infinite;
+}
+
+.arcadebtn span {
+  display: block;
+  margin-top: clamp(7px, 1vh, 11px);
+  font-size: 0.42em;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: rgba(58, 32, 5, 0.6);
+}
+
+@keyframes btnbreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.014);
+  }
+}
+
+.arcadebtn:hover {
+  background: #ffd873;
+}
+
+.arcadebtn:active {
+  animation: none;
+  transform: translateY(6px);
+  box-shadow:
+    inset 0 4px 0 #ffe193,
+    inset 0 -5px 0 #d9a02e,
+    0 1px 0 #a06a12,
+    0 1px 0 4px var(--wood-edge),
+    5px 8px 0 rgba(13, 8, 5, 0.4);
+}
+
+.arcadebtn:focus-visible {
+  outline: 3px solid var(--cream);
+  outline-offset: 4px;
+}
+
+/* The cream key: same construction, quieter voice, no breathing. */
+.arcadebtn.howtobtn {
+  font-size: clamp(10px, 1.45vh, 16px);
+  color: #3a2417;
+  background: var(--cream);
+  padding: clamp(9px, 1.4vh, 15px) clamp(16px, 1.6vw, 30px);
+  animation: none;
+  box-shadow:
+    inset 0 3px 0 #fff8ea,
+    inset 0 -4px 0 #d9c4a0,
+    0 5px 0 #a08a68,
+    0 5px 0 4px var(--wood-edge),
+    7px 11px 0 rgba(13, 8, 5, 0.4);
+}
+
+.arcadebtn.howtobtn:hover {
+  background: #fff4dd;
+}
+
+.arcadebtn.howtobtn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 3px 0 #fff8ea,
+    inset 0 -4px 0 #d9c4a0,
+    0 1px 0 #a08a68,
+    0 1px 0 4px var(--wood-edge),
+    4px 6px 0 rgba(13, 8, 5, 0.4);
+}
+
+/* ---------------------------------------------------------------- foot --- */
+.ringfoot {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pad-y) * 0.5);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: clamp(12px, 1.3vw, 24px);
+  white-space: nowrap;
+}
+
+.startnote {
+  margin: 0;
+  font-size: var(--t-caption);
+  color: rgba(255, 233, 199, 0.3);
+}
+
+.ghostbtn {
+  pointer-events: auto;
+  font: inherit;
+  font-size: var(--t-caption);
+  font-weight: 600;
+  color: rgba(255, 233, 199, 0.55);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 233, 199, 0.25);
+}
+
+.ghostbtn:hover {
+  color: var(--cream);
+  border-bottom-color: var(--cream);
+}
+
+/* -------------------------------------------------------- how to play --- */
+.howto {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 8, 5, 0.96);
+}
+
+.howtoinner {
+  width: min(660px, 84vw);
+  text-align: center;
+}
+
+.howtotitle {
+  font-family: 'Press Start 2P', monospace;
+  font-size: calc(var(--t-hero) * 0.36);
+  letter-spacing: 0.1em;
+  color: var(--mango);
+}
+
+.howtogoal {
+  margin: clamp(14px, 2vh, 24px) 0 clamp(20px, 3vh, 38px);
+  font-size: var(--t-body);
+  color: var(--cream);
+}
+
+.moves {
+  list-style: none;
+  margin: 0 0 clamp(22px, 3.4vh, 40px);
+  padding: 0;
+  text-align: left;
+}
+
+.moves li {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 1.4vw, 24px);
+  padding: clamp(9px, 1.3vh, 15px) 0;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 233, 199, 0.65);
+}
+
+.moves b {
+  color: var(--cream);
+  font-weight: 600;
+}
+
+.key {
   flex: none;
-  font-size: 9px;
-  opacity: 0.6;
+  width: clamp(38px, 3.2vw, 54px);
+  padding: clamp(7px, 1vh, 11px) 0;
+  text-align: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: calc(var(--t-body) * 0.72);
+  color: var(--wood-dark);
+  background: var(--cream);
+  box-shadow: 3px 3px 0 rgba(13, 8, 5, 0.5);
+}
+
+.key.wide {
+  font-size: calc(var(--t-body) * 0.52);
+}
+
+.key.mango {
+  background: var(--mango);
+}
+
+.ghostbtn.solid {
+  font-size: var(--t-body);
+  border: 3px solid var(--wood-edge);
+  background: var(--wood);
+  color: var(--cream);
+  box-shadow: 0 4px 0 var(--wood-edge);
+  padding: clamp(11px, 1.5vh, 16px) clamp(28px, 3vw, 46px);
+}
+
+.ghostbtn.solid:hover {
+  background: var(--wood-lite);
+}
+
+/* Ultrawide: the venue stays the anchor; the objects move to the far walls. */
+@media (min-aspect-ratio: 21/9) {
+  #screen-lobby {
+    --pad-x: clamp(48px, 5.5vw, 180px);
+    --col: clamp(240px, 13vw, 360px);
+  }
+}
+/* The board result, reported not requested. */
+.resultrecord {
+  font-size: 13px;
+  line-height: 2;
+  letter-spacing: 0.06em;
+}
+
+.resultrecord .newrecord {
+  padding: 3px 8px;
+  background: var(--p1);
+  color: #0c0714;
+}
+
+.resultrecord .madeboard {
+  padding: 3px 8px;
+  background: var(--panel-hi);
+  color: var(--ink);
 }
 
 .recordhead {
@@ -222,39 +898,50 @@ body.desktop {
   max-width: 340px;
 }
 
-.startbtn {
-  width: 100%;
-  font-size: 16px;
-  min-height: 76px;
-}
-
 .bigbtn {
   font-size: 14px;
   min-height: 64px;
   padding: 14px 26px;
 }
 
-.hint {
-  font-size: 9px;
-  line-height: 1.9;
-  opacity: 0.7;
-  margin: 8px 0 0;
-}
-
-.hint.center {
-  text-align: center;
-  margin: 0;
-}
-
 /* --------------------------------------------------------------- fight --- */
 /* Full bleed. The canvas keeps its 16:9 pixel grid and letterboxes itself
-   rather than stretching, so nothing is ever resampled off the pixel grid. */
+   rather than stretching, so nothing is ever resampled off the pixel grid.
+   The letterbox is the venue's darkest wood, not dead black, and the HTML
+   chrome on this screen speaks the same wood-and-mango language as the lobby. */
 #screen-fight {
   position: relative;
-  background: #000;
+  background: #0d0805;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+#screen-fight .pixelpanel {
+  background: #241610;
+  border-color: #0d0805;
+  box-shadow: 0 6px 0 #0d0805, 10px 14px 0 rgba(13, 8, 5, 0.5);
+}
+
+#screen-fight .pixelbtn {
+  background: #3a2417;
+  border-color: #0d0805;
+  box-shadow: 4px 4px 0 #0d0805;
+  color: #ffe9c7;
+}
+
+#screen-fight .pixelbtn.on {
+  background: #ffce54;
+  color: #3a2005;
+}
+
+#screen-fight .pixelinput {
+  background: #150e09;
+  border-color: #0d0805;
+}
+
+#screen-fight .pixelinput:focus {
+  border-color: #ffce54;
 }
 
 #fightcanvas {
@@ -287,7 +974,7 @@ body.desktop {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(12, 7, 20, 0.88);
+  background: rgba(13, 8, 5, 0.9);
 }
 
 .resultinner {
@@ -331,24 +1018,4 @@ body.desktop {
   max-height: 220px;
   overflow: auto;
   margin: 0;
-}
-
-@media (max-height: 800px) {
-  .qrbox {
-    width: 230px;
-    height: 230px;
-  }
-  .roomcode {
-    font-size: 34px;
-  }
-  .seatcard {
-    padding: 14px;
-  }
-  .seatcard h3 {
-    font-size: 18px;
-  }
-  .startbtn {
-    min-height: 60px;
-    font-size: 13px;
-  }
 }
