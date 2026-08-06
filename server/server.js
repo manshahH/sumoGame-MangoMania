@@ -196,6 +196,11 @@ io.on('connection', (socket) => {
     socket.join(room.code)
 
     ackRoom(room, ack, payload.origin)
+    // A fresh host means no match is running, whatever the phones still have on
+    // screen. Without this, reloading the desktop leaves every phone that held
+    // a seat sitting on a controller for a match that no longer exists,
+    // receiving nothing. Send them back to the seat picker.
+    io.to(room.code).emit('tolobby', lobbyPayload(room))
     broadcastLobby(room)
   })
 
@@ -326,6 +331,18 @@ io.on('connection', (socket) => {
     const host = hostSocket(room)
     if (host) {
       host.emit('ready', { playerId: socket.data.playerId, seat: payload.seat, ready: !!payload.ready })
+    }
+  })
+
+  // "This is the wrestler I want to be." Forwarded to the host, which owns
+  // what each seat looks like.
+  socket.on('skin', (payload = {}) => {
+    const room = rooms.get(socket.data.room)
+    if (!room || !socket.data.playerId) return
+    if (room.lobby.claims[payload.seat] !== socket.data.playerId) return // not your seat
+    const host = hostSocket(room)
+    if (host) {
+      host.emit('skin', { playerId: socket.data.playerId, seat: payload.seat, skin: String(payload.skin || '') })
     }
   })
 
