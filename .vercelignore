@@ -1,0 +1,20 @@
+# Only four directories are ever served: client/, shared/, assets/ and server/.
+# Everything below is source material or scratch that never leaves this machine,
+# and without this file it rides along on every deploy - the raw itch.io export
+# and the un-sliced pharaoh sheet alone are ~10MB of it.
+node_modules
+.git
+
+# Raw itch.io export bundle - assets/ is the curated set that actually ships.
+assets_sumo_time/
+assets_sumo_time.zip
+__MACOSX/
+
+# Un-sliced source sheets sitting at the root. The sliced frames the game
+# actually loads live under assets/.
+pharaoh.png
+firemonk sumo.png
+dragonsumo.jfif
+oniSumo.png
+pandaskin.png
+vegetable &fruit（.png
