@@ -41,7 +41,7 @@ function createFighter(id, x, y) {
     raw: { move: { x: 0, y: 0 }, a: false, b: false },
     prevA: false,
     prevB: false,
-    pending: null, // { type: 'hit' | 'push', fireAt: seconds }
+    aHeldSince: null, // when A went down; the hold is what raises the brace
     parry: null, // { phase: 'active' | 'recover', t: seconds-in-phase }
     parryCooldown: 0,
     cooldowns: { hit: 0, push: 0 },
@@ -201,11 +201,10 @@ function resolveAttack(state, attackerSeat, kind) {
 
   if (kind === 'hit') {
     state.stats[attackerSeat].hits += 1
+    // The counter runs, but it pays nothing. A mango - and the weight and size
+    // that come with it - is only ever earned by landing a parry.
     attacker.combo.count += 1
     attacker.combo.timer = CONFIG.combo.windowMs / 1000
-    if (attacker.combo.count % CONFIG.combo.milestone === 0) {
-      grantMango(state, attackerSeat, 'combo')
-    }
   } else {
     state.stats[attackerSeat].pushes += 1
   }
@@ -228,37 +227,40 @@ function commitAction(state, seat, type) {
   }
 }
 
+/**
+ * Tap A = jab, hold A = the guard comes up, B = push. Presses commit on the
+ * rising edge, the same tick they arrive.
+ *
+ * That immediacy is load-bearing: the old design held every press in a grace
+ * window and only committed it if the button was STILL down when the window
+ * closed - needed when A+B was a chord, but it silently dropped the quick
+ * taps humans actually make on a phone screen (a natural tap is often shorter
+ * than grace + network jitter). Bots held their presses long enough by
+ * construction, which is why bot fights looked fine while humans "couldn't
+ * hit anything".
+ */
 function resolveInput(state, seat, now) {
   const f = state.fighters[seat]
   const a = !!f.raw.a
   const b = !!f.raw.b
+
+  if (a && !f.prevA) f.aHeldSince = now
+  if (!a) f.aHeldSince = null
+
   const busy = !!f.lock || !!f.parry
-
   if (!busy) {
-    const risingA = a && !f.prevA
-    const risingB = b && !f.prevB
-
-    if (a && b) {
-      if (f.parryCooldown <= 0) {
-        f.pending = null
-        f.parry = { phase: 'active', t: 0 }
-        f.anim = 'brace'
-      }
-    } else {
-      if (risingA && f.cooldowns.hit <= 0) {
-        f.pending = { type: 'hit', fireAt: now + CONFIG.parry.graceMs / 1000 }
-      } else if (risingB && f.cooldowns.push <= 0) {
-        f.pending = { type: 'push', fireAt: now + CONFIG.parry.graceMs / 1000 }
-      }
-    }
-
-    if (f.pending && !f.parry && now >= f.pending.fireAt) {
-      const type = f.pending.type
-      const stillHeld = type === 'hit' ? a : b
-      f.pending = null
-      if (stillHeld) commitAction(state, seat, type)
-    } else if (f.pending && (a && b)) {
-      f.pending = null
+    if (a && !f.prevA && f.cooldowns.hit <= 0) {
+      commitAction(state, seat, 'hit')
+    } else if (b && !f.prevB && f.cooldowns.push <= 0) {
+      commitAction(state, seat, 'push')
+    } else if (
+      a &&
+      f.aHeldSince !== null &&
+      now - f.aHeldSince >= CONFIG.parry.holdMs / 1000 &&
+      f.parryCooldown <= 0
+    ) {
+      f.parry = { phase: 'active', t: 0 }
+      f.anim = 'brace'
     }
   }
 
@@ -270,13 +272,16 @@ function tickParry(state, seat, dt) {
   const f = state.fighters[seat]
   if (f.parry) {
     f.parry.t += dt
-    if (f.parry.phase === 'active' && f.parry.t >= CONFIG.parry.activeMs / 1000) {
+    // The guard stays up while A stays down, capped so nobody turtles forever;
+    // letting go drops it into recovery straight away.
+    if (f.parry.phase === 'active' && (f.parry.t >= CONFIG.parry.activeMs / 1000 || !f.raw.a)) {
       f.parry.phase = 'recover'
       f.parry.t = 0
     } else if (f.parry.phase === 'recover' && f.parry.t >= CONFIG.parry.recoveryMs / 1000) {
       f.parry = null
       f.parryCooldown = CONFIG.parry.cooldownMs / 1000
       f.animLock = false
+      f.aHeldSince = null // a fresh hold is required for the next brace
     }
   }
   if (f.parryCooldown > 0) f.parryCooldown = Math.max(0, f.parryCooldown - dt)

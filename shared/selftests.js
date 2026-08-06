@@ -114,21 +114,25 @@ function testRingOut(t) {
 }
 
 function testInputResolution(t) {
-  // A alone -> a hit lands.
+  // A tap commits a hit the same tick it arrives - no grace window. This is
+  // what makes quick touchscreen taps land.
   {
     const state = freshFightingState('input-a')
     place(state, 'p1', -20, 0)
     place(state, 'p2', 20, 0)
     setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
     setInput(state, 'p2', neutralInput())
-    let events = []
-    run(state, 0.5, (s) => events.push(...drainEvents(s)))
-    events.push(...drainEvents(state))
-    t.ok('A alone resolves to a hit', events.some((e) => e.type === 'hit' && e.seat === 'p1'))
-    t.ok('no parry was entered from a single button', events.every((e) => e.type !== 'parry'))
+    stepMatch(state, DT)
+    const events = drainEvents(state)
+    t.ok('a tap of A commits a hit on the very first tick', events.some((e) => e.type === 'hit' && e.seat === 'p1'))
+    // release after one tick - a 16ms tap - and nothing else should fire
+    setInput(state, 'p1', neutralInput())
+    let later = []
+    run(state, 0.4, (s) => later.push(...drainEvents(s)))
+    t.ok('a quick tap never turns into a parry', later.every((e) => e.type !== 'parry') && state.fighters.p1.parry === null)
   }
 
-  // B alone -> a push lands.
+  // B alone -> a push, also instant.
   {
     const state = freshFightingState('input-b')
     place(state, 'p1', -20, 0)
@@ -140,34 +144,39 @@ function testInputResolution(t) {
     t.ok('B alone resolves to a push', events.some((e) => e.type === 'push' && e.seat === 'p1'))
   }
 
-  // A and B together within the grace window -> parry, and the single-button
-  // action that would have fired is cancelled.
+  // Holding A raises the guard once the hold threshold passes.
   {
-    const state = freshFightingState('input-ab')
-    place(state, 'p1', -200, 0) // out of range, so a stray hit/push would only show as a whiff, not a hit/push event
+    const state = freshFightingState('input-hold')
+    place(state, 'p1', -200, 0) // out of range: the opening jab only whiffs
     place(state, 'p2', 200, 0)
     setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
+    run(state, CONFIG.parry.holdMs / 1000 + 0.1)
+    t.ok('holding A raises the brace', state.fighters.p1.parry !== null && state.fighters.p1.parry.phase === 'active')
+    // release: the guard drops into recovery rather than staying up
+    setInput(state, 'p1', neutralInput())
     stepMatch(state, DT)
-    setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: true })
-    let events = []
-    run(state, 0.5, (s) => events.push(...drainEvents(s)))
-    t.ok('A then B within the grace window upgrades to parry (no hit fired)', !events.some((e) => e.type === 'hit'))
-    t.ok('the fighter entered a parry brace', state.fighters.p1.parry !== null || events.length >= 0)
+    t.ok('releasing A drops the guard', state.fighters.p1.parry === null || state.fighters.p1.parry.phase === 'recover')
   }
 }
 
 function testParryResolution(t) {
-  // A hit landing during the active parry window is fully cancelled.
+  // A hit landing while the guard is up is fully cancelled.
   {
     const state = freshFightingState('parry-active')
+    // p2 raises the guard from a distance (the opening jab whiffs harmlessly)...
+    place(state, 'p1', -200, 0)
+    place(state, 'p2', 200, 0)
+    setInput(state, 'p2', { move: { x: 0, y: 0 }, a: true, b: false })
+    setInput(state, 'p1', neutralInput())
+    run(state, CONFIG.parry.holdMs / 1000 + 0.1)
+    t.ok('the guard is up', state.fighters.p2.parry?.phase === 'active')
+    // ...then the attacker arrives and swings into it.
     place(state, 'p1', -20, 0)
     place(state, 'p2', 20, 0)
     const startWeight = state.fighters.p2.weight
-    setInput(state, 'p2', { move: { x: 0, y: 0 }, a: true, b: true }) // p2 braces
-    stepMatch(state, DT) // parry becomes active this tick
-    setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false }) // p1 throws a hit into the active window
+    setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
     let events = []
-    run(state, 0.3, (s) => events.push(...drainEvents(s)))
+    run(state, 0.2, (s) => events.push(...drainEvents(s)))
     t.ok('the hit was cancelled, not landed', !events.some((e) => e.type === 'hit'))
     t.ok('a parry event fired for the defender', events.some((e) => e.type === 'parry' && e.seat === 'p2'))
     t.ok('the defender earned a mango', events.some((e) => e.type === 'mango' && e.seat === 'p2'))
@@ -175,20 +184,23 @@ function testParryResolution(t) {
     t.ok('the attacker was staggered', state.fighters.p1.lock && state.fighters.p1.lock.kind === 'staggerPunish')
   }
 
-  // The same hit, thrown after the active window has expired, lands normally.
+  // The same hit, thrown once the guard has dropped, lands normally.
   {
     const state = freshFightingState('parry-expired')
+    place(state, 'p1', -200, 0)
+    place(state, 'p2', 200, 0)
+    setInput(state, 'p2', { move: { x: 0, y: 0 }, a: true, b: false })
+    setInput(state, 'p1', neutralInput())
+    run(state, CONFIG.parry.holdMs / 1000 + 0.1) // guard up
+    setInput(state, 'p2', neutralInput()) // guard released -> recovery
+    run(state, 0.05)
     place(state, 'p1', -20, 0)
     place(state, 'p2', 20, 0)
-    setInput(state, 'p2', { move: { x: 0, y: 0 }, a: true, b: true })
-    run(state, CONFIG.parry.activeMs / 1000 + 0.05) // brace, then let the active window lapse into recovery
-    setInput(state, 'p2', neutralInput())
-    run(state, 0.05)
     const p2WeightBefore = state.fighters.p2.weight
     setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
     let events = []
     run(state, 0.3, (s) => events.push(...drainEvents(s)))
-    t.ok('a hit thrown outside the active window lands normally', events.some((e) => e.type === 'hit'))
+    t.ok('a hit thrown after the guard drops lands normally', events.some((e) => e.type === 'hit'))
     t.ok('the defender lost weight this time', state.fighters.p2.weight < p2WeightBefore)
   }
 }
@@ -208,29 +220,35 @@ function testCombo(t) {
   setInput(state, 'p2', neutralInput())
   const events = []
   const throwHit = () => {
+    // a real tap: down for two ticks, then released well before the hold threshold
     setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
-    // grace window before the hit commits, then the full cooldown, plus a hair of buffer
-    run(state, (CONFIG.parry.graceMs + CONFIG.hit.cooldownMs) / 1000 + 0.05, (s) => events.push(...drainEvents(s)))
+    run(state, 2 * DT, (s) => events.push(...drainEvents(s)))
     setInput(state, 'p1', neutralInput())
-    run(state, 0.05, (s) => events.push(...drainEvents(s)))
+    run(state, CONFIG.hit.cooldownMs / 1000 + 0.05, (s) => events.push(...drainEvents(s)))
     // keep them in range - hits knock the defender back a little
     place(state, 'p2', state.fighters.p1.x + 54, state.fighters.p1.y)
   }
+  const weightBefore = state.fighters.p1.weight
   throwHit()
   throwHit()
   t.ok('combo counter is at 2 after two quick hits', state.fighters.p1.combo.count === 2)
   throwHit()
-  t.ok('combo counter reaches the milestone', state.fighters.p1.combo.count === CONFIG.combo.milestone)
-  t.ok('the milestone granted a mango', events.some((e) => e.type === 'mango' && e.seat === 'p1' && e.reason === 'combo'))
+  throwHit()
+  t.ok('the counter keeps climbing past three', state.fighters.p1.combo.count === 4)
+  // The whole point: hitting is not how you earn a mango. Only a parry is.
+  t.ok('a string of hits grants NO mango', !events.some((e) => e.type === 'mango'))
+  t.ok('and costs the attacker no weight either way', state.fighters.p1.weight === weightBefore)
+  t.ok('the attacker does not grow from landing hits', state.stats.p1.mangoes === 0)
 
-  // A parried hit breaks the combo.
+  // A parried hit breaks the combo. The guard is planted directly - which
+  // exact input raised it is the previous suite's business.
   const state2 = freshFightingState('combo-break')
   place(state2, 'p1', -20, 0)
   place(state2, 'p2', 20, 0)
   state2.fighters.p1.combo.count = 2
   state2.fighters.p1.combo.timer = 1
-  setInput(state2, 'p2', { move: { x: 0, y: 0 }, a: true, b: true })
-  stepMatch(state2, DT)
+  state2.fighters.p2.parry = { phase: 'active', t: 0 }
+  state2.fighters.p2.raw.a = true // holding the guard
   setInput(state2, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
   run(state2, 0.3)
   t.ok('a parried hit resets the attacker combo to zero', state2.fighters.p1.combo.count === 0)
@@ -311,14 +329,14 @@ function testRounds(t) {
 }
 
 /**
- * The bug this guards: a bot press shorter than the parry grace window is
- * released before the sim commits the action, so the bot never lands anything
- * and the "fight" is two bodies shoving each other by collision alone.
+ * The bug this guards: a bot attack press held PAST the parry hold threshold
+ * turns into an accidental guard, so the bot never lands anything and the
+ * "fight" is two bodies shoving each other by collision alone.
  */
 function testBotsActuallyFight(t) {
   t.ok(
-    'a bot press outlasts the parry grace window',
-    CONFIG.bots.pressSeconds > CONFIG.parry.graceMs / 1000
+    'a bot attack press releases well before the parry hold threshold',
+    CONFIG.bots.pressSeconds < CONFIG.parry.holdMs / 1000 - 1 / CONFIG.tickHz
   )
   t.ok('bots stand outside body-overlap range', CONFIG.bots.standoffBodyMul > 1)
 
@@ -517,7 +535,9 @@ function testMatchStats(t) {
   place(state, 'p2', 27, 0)
   setInput(state, 'p2', neutralInput())
   setInput(state, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
-  run(state, (CONFIG.parry.graceMs + CONFIG.hit.cooldownMs) / 1000 + 0.05)
+  run(state, 2 * DT)
+  setInput(state, 'p1', neutralInput())
+  run(state, 0.2)
   t.ok('a landed hit is counted', state.stats.p1.hits === 1)
   t.ok('the defender is credited with nothing', state.stats.p2.hits === 0)
 
@@ -532,8 +552,8 @@ function testMatchStats(t) {
   capped.fighters.p2.weight = CONFIG.weight.cap
   place(capped, 'p1', -20, 0)
   place(capped, 'p2', 20, 0)
-  setInput(capped, 'p2', { move: { x: 0, y: 0 }, a: true, b: true })
-  stepMatch(capped, DT)
+  capped.fighters.p2.parry = { phase: 'active', t: 0 }
+  capped.fighters.p2.raw.a = true
   setInput(capped, 'p1', { move: { x: 0, y: 0 }, a: true, b: false })
   run(capped, 0.3)
   t.ok('a mango earned at the weight cap still counts', capped.stats.p2.mangoes >= 1)
@@ -667,10 +687,10 @@ export function runSelfTests() {
     ['speed/push-resistance monotonicity', testWeightMonotonic],
     ['push impulse weight-ratio scaling', testKnockbackScaling],
     ['ring-out detection', testRingOut],
-    ['input resolution (A / B / A+B)', testInputResolution],
-    ['parry resolution (active window vs expired)', testParryResolution],
+    ['input resolution (tap A / tap B / hold A)', testInputResolution],
+    ['parry resolution (guard up vs guard dropped)', testParryResolution],
     ['weight bounds', testWeightBounds],
-    ['combo counter + milestone mango + parry breaks combo', testCombo],
+    ['combo counter (feedback only, no mango) + parry breaks combo', testCombo],
     ['round end: ring-out winner + timeout tiebreak', testMatchEnd],
     ['best-of-3 rounds: tally, reset, match end', testRounds],
     ['the ring is a fixed size (no shrink)', testRingIsFixed],

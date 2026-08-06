@@ -3,10 +3,9 @@
 // just another controller from the sim's point of view.
 //
 // Two things here are load-bearing and easy to get wrong:
-//   1. A press must be HELD longer than CONFIG.parry.graceMs. The sim waits out
-//      the grace window before committing a single-button action (so a second
-//      button arriving late still upgrades to a parry). A shorter press is
-//      released before it commits and the bot silently never attacks.
+//   1. An attack press must be RELEASED well before CONFIG.parry.holdMs, or
+//      the bot's jab turns into an accidental guard and it stops attacking.
+//      A guard press is the opposite: held past holdMs on purpose.
 //   2. The standoff must keep the bodies from overlapping. Parked inside the
 //      opponent, collision resolution shoves the pair apart every tick and the
 //      fight degenerates into two sumos rubbing against each other.
@@ -131,21 +130,22 @@ function decide(seat, state, mem, rng, tier) {
   const oppNearEdge = Math.hypot(opp.x - state.ring.cx, opp.y - state.ring.cy) > state.ring.radius * 0.55
   const hold = CONFIG.bots.pressSeconds
 
-  // Reading a telegraphed push and bracing for it is the one flashy thing a
-  // bot does, so the parry mechanic is visible to a room watching a solo game.
-  if (free && self.parryCooldown <= 0) {
+  // The guard takes holdMs to come up, so it cannot answer a telegraph the
+  // way the old chord could - it is raised in anticipation, when the bot is
+  // close enough that a blow is likely coming. Still the one flashy thing a
+  // bot does for a watching room.
+  if (free && self.parryCooldown <= 0 && dist <= CONFIG.push.range * 1.5) {
     const telegraphed = opp.lock && opp.lock.kind === 'pushWindup'
-    const chance = telegraphed ? Math.min(0.92, tier.parryChance * 3) : tier.parryChance * 0.08
+    const chance = telegraphed ? Math.min(0.85, tier.parryChance * 1.6) : tier.parryChance * 0.14
     if (rng() < chance) {
-      mem.buttons = { a: true, b: true }
-      mem.holdUntil = now + CONFIG.parry.activeMs / 1000 + 0.06
+      mem.buttons = { a: true, b: false }
+      mem.holdUntil = now + CONFIG.parry.holdMs / 1000 + 0.4 // past holdMs on purpose: this press IS the guard
       return
     }
   }
 
-  // An attack only commits after the parry grace window has elapsed, so a bot
-  // that keeps circling during the press drifts out of range and whiffs.
-  // Lean into the opponent for the duration instead.
+  // Lean into the opponent while a press is down, so the bot doesn't circle
+  // itself out of range mid-attack.
   const commit = (a, b) => {
     mem.buttons = { a, b }
     mem.holdUntil = now + hold

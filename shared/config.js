@@ -46,12 +46,15 @@ export const CONFIG = {
     staggerMs: 260, // defender loses control this long on a landed push
   },
 
-  // ---- parry (A+B) --------------------------------------------------------
+  // ---- parry (hold A) -------------------------------------------------------
+  // Tap A and you jab; keep holding and the guard comes up. There is no grace
+  // window and no button chord: presses commit the instant they arrive, which
+  // is what makes quick taps on a phone screen land reliably.
   parry: {
-    graceMs: 90, // a second button joining within this window upgrades to parry
-    activeMs: 250, // window in which an incoming hit/push is cancelled
-    recoveryMs: 300, // brace fatigue after the active window, whether it landed or not
-    cooldownMs: 400, // before parry can be entered again after recovering
+    holdMs: 250, // hold A this long to raise the brace (tap shorter = just the jab)
+    activeMs: 900, // longest the brace stays up while held; release drops it sooner
+    recoveryMs: 300, // brace fatigue after the guard drops, whether it caught anything or not
+    cooldownMs: 400, // before the guard can come up again after recovering
     punishMs: 500, // attacker stagger on being parried
     mangoWeight: 12, // weight restored on a perfect parry
     edgeMercy: {
@@ -61,10 +64,12 @@ export const CONFIG = {
   },
 
   // ---- combo --------------------------------------------------------------
+  // The counter is feedback only. Mangoes and the weight they carry come from
+  // ONE place - a landed parry - because that is the read the game is about.
+  // Paying them out for a string of A-taps as well made mashing the better
+  // strategy than reading, which is exactly backwards.
   combo: {
     windowMs: 1200, // consecutive hits inside this window keep the counter alive
-    milestone: 3, // every N hits in a combo earns a mango
-    mangoWeight: 12,
   },
 
   // ---- knockback shaping --------------------------------------------------
@@ -88,8 +93,8 @@ export const CONFIG = {
   match: {
     countdownSeconds: 3,
     // Per-round hard cap. With no shrinking ring to force the issue this is the
-    // only thing keeping a round short, so it is deliberately tight.
-    roundSeconds: 25,
+    // only thing keeping a round bounded.
+    roundSeconds: 45,
     roundsToWin: 2, // best of 3
     maxRounds: 3,
     roundEndHoldSeconds: 2.4, // "P1 TAKES ROUND 1" card between rounds
@@ -123,8 +128,10 @@ export const CONFIG = {
       ozeki: {
         label: 'OZEKI',
         blurb: 'Solid. Softens you up, then takes the push when it is there.',
-        reactionMs: 320,
-        hesitateChance: 0.17,
+        // Tuned for the walk-up crowd: a first-timer should lose a round or
+        // two to OZEKI and still get there - not easily, but eventually.
+        reactionMs: 360,
+        hesitateChance: 0.22,
         parryChance: 0.17,
         pushChance: 0.44,
         aimJitter: 0.16,
@@ -148,10 +155,10 @@ export const CONFIG = {
     // any ring awareness at all a bot walks itself out more often than it gets
     // pushed out, which reads as the bot wandering off on its own.
     edgeMarginBodies: 1.7,
-    // A bot presses a button for this long. It MUST exceed parry.graceMs or the
-    // press is released before the action commits and the bot never attacks at
-    // all - it just walks into the opponent and shoves them around by collision.
-    pressSeconds: 0.2,
+    // How long a bot holds an ATTACK press. Commits are instant, so this only
+    // needs to survive a tick or two - and it MUST stay well under
+    // parry.holdMs, or every bot jab turns into an accidental guard.
+    pressSeconds: 0.12,
     // How far outside touching-bodies the bot likes to stand. Below 1.0 it ends
     // up permanently overlapping the opponent, and collision resolution shoves
     // the pair apart every tick instead of either of them landing a blow. Much
@@ -187,6 +194,32 @@ export const CONFIG = {
   },
 
   // ---- presentation -----------------------------------------------------
+  // ---- skins ----------------------------------------------------------------
+  // A skin is either a real sprite-sheet directory (`dir`, holding the same
+  // seven state sheets as /assets/sumo) or a colour grade over the base sheet
+  // (`filter`). New characters drop in as a dir and one line here.
+  skins: {
+    list: [
+      { id: 'mango', label: 'MANGO', filter: '' },
+      { id: 'firemonk', label: 'FIREMONK', dir: '/assets/sumo/skins/firemonk' },
+      { id: 'dragon', label: 'DRAGON', dir: '/assets/sumo/skins/dragon' },
+      { id: 'oni', label: 'ONI', dir: '/assets/sumo/skins/oni' },
+      { id: 'panda', label: 'PANDA', dir: '/assets/sumo/skins/panda' },
+    ],
+    // maps the engine's animation states onto a skin dir's files
+    stateFiles: {
+      idle: 'idle.png',
+      walk: 'walk.png',
+      hit: 'hit.png',
+      push: 'push.png',
+      brace: 'brace.png',
+      hurt: 'stagger.png',
+      ringout: 'fallen.png',
+      celebrate: 'idle.png',
+    },
+    defaults: { p1: 'mango', p2: 'panda' },
+  },
+
   colors: {
     bg: '#140b1a',
     panel: '#231533',
