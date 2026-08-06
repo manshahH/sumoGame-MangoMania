@@ -25,10 +25,19 @@ npm start
 - **Ring (the big screen):** <http://localhost:4321>
 - **Controller (phones):** scan the QR code shown on the ring, or type the printed URL
 
-The desktop prints its LAN address on start. A phone on the same WiFi scans the QR, lands on a
-join screen, and claims **P1** or **P2**. Whichever seat nobody claims is fought by the bot - so
-"P1 vs BOT" is just P1 claiming a seat and starting the match. Port is `4321`; override with
-`PORT=8080 npm start`.
+The desktop prints its LAN address on start. A phone on the same WiFi runs three steps and never
+skips one:
+
+1. **Enter the room.** The QR carries the room code, so the phone lands on a screen that asks for
+   one thing: a name. It does not join until **ENTER ROOM** is tapped - that is what stops a whole
+   room of players showing up on the ring as "CHALLENGER".
+2. **Choose your side.** Two slabs, **PLAYER 1** and **PLAYER 2**, showing who is in each. A seat
+   nobody claims is fought by the bot, so "P1 vs BOT" is just one player taking a seat.
+3. **Pick your wrestler and tap READY.** Every match opens on this gate, including a rematch.
+
+A phone holding no seat waits on step 2 rather than a dead-end screen, so the instant a seat opens
+- which is what winner-stays-on does at the end of every match - it is one tap away. Port is
+`4321`; override with `PORT=8080 npm start`.
 
 ### Solo testing without a second device
 
@@ -39,8 +48,10 @@ http://localhost:4321/play?room=<ROOM CODE>&seat=p1&name=ALICE
 http://localhost:4321/play?room=<ROOM CODE>&seat=p2&name=BOB
 ```
 
-`seat` and `name` are optional - without them you just get the normal join screen. Open one tab and
-leave the other seat to the bot, or open both and referee a human-vs-human match from one machine.
+`seat` and `name` are optional. Passing `name` is what makes this a one-click shortcut: a URL that
+already names the player joins straight away, while a plain scanned QR always stops on the name
+screen first. Open one tab and leave the other seat to the bot, or open both and referee a
+human-vs-human match from one machine.
 
 ### Self-tests
 
@@ -51,8 +62,8 @@ npm test              # runs shared/selftests-node.js headlessly
 or open the ring with `http://localhost:4321/?test` and read the browser console. Both run the
 exact same `runSelfTests()` suite in `shared/selftests.js` - deterministic, no DOM, no sockets.
 It covers: the weight → speed/push-resistance curves, knockback weight-ratio scaling, ring-out
-detection, the A / B / A+B input resolver (including the grace-window parry upgrade), parry
-cancel/punish/mango, weight floor/cap clamping, combo + milestone mango + parry breaking a combo,
+detection, the tap-A / tap-B / hold-A input resolver (presses commit the instant they arrive), parry
+cancel/punish/mango, weight floor/cap clamping, the combo counter paying no mango, parry breaking a combo,
 round endings and the full tiebreak chain, the best-of-3 round tally and per-round reset, per-match
 stats surviving a round reset, mango leaderboard ranking, the ready gate, the winner-stays-on
 streak, and a headless bot-vs-bot match that must terminate legally.
@@ -65,26 +76,26 @@ and **bots engage early in every round** (not just round 1).
 
 ## How to play
 
-A match is **best of 3 rounds**. Before every match each player gets a rules card on their phone
-and taps **READY** - that's separate from claiming a seat, and nobody fights until both are ready.
+A match is **best of 3 rounds** (45s each). Before every match each player picks their wrestler on
+a Tekken-style character select on their phone and taps **READY** - that's separate from claiming a
+seat, and nobody fights until both are ready. Skins are colour grades over one sheet
+(`CONFIG.skins`); alternate sprite sheets can drop in later without touching the select screen.
 
-Controls live at the **bottom** of the phone, where thumbs actually are:
+The controller is held **sideways**: joystick under the left thumb, two buttons under the right.
+Presses commit the instant they arrive - there is no grace window, so the quick taps people
+actually make on glass always land (the old chord-parry grace window silently ate short taps,
+which is why humans "couldn't hit the bot"):
 
 - **Left thumb:** joystick, moves you around the ring. You always face your opponent automatically
   - there's no aiming, so it's pick-up-and-play for a stranger at an event.
-- **Right thumb, two big buttons offset on a diagonal, close enough that one thumb can roll across
-  both:**
-  - **A (lower) = HIT** - fast, short range, chips a little weight and stuns. It's the button you
-    press most, so it gets the shorter reach.
-  - **B (upper) = PUSH** - slower to throw and to recover from, but a big knockback scaled by
-    the weight gap between you and your opponent. This is your ring-out finisher; whiffing it
-    leaves you open.
-  - **Hold A + B together = PARRY.** The detector treats *holding both* as a brace rather than
-    requiring a frame-perfect simultaneous tap - if the second button joins within ~90ms of the
-    first, it upgrades to a parry and cancels whatever single-button action was about to fire. The
-    first ~250ms of the brace is the active window: a hit or push landing in it is fully cancelled,
-    staggers the attacker, and earns you a **mango** (restores weight). Mash it with nothing coming
-    in and you're just standing there exposed once the window closes.
+- **Right thumb:**
+  - **Tap A = HIT** - fast, short range, chips a little weight and stuns.
+  - **Hold A = PARRY** - after ~250ms the guard comes up and stays up while held (~0.9s max).
+    A hit or push landing on the raised guard is fully cancelled, staggers the attacker, and earns
+    you a **mango** (restores weight). It's a raised-in-anticipation guard, not a reaction parry -
+    and the phone buzzes hard and flashes the pad edge when one lands.
+  - **B = PUSH** - slower to throw and to recover from, but a big knockback scaled by the weight
+    gap. This is your ring-out finisher; whiffing it leaves you open.
 
 **Weight is the whole game.** It's your HP, your mass, and your size all at once: heavier hits
 harder and resists knockback, but moves slower and is a bigger sprite. Getting hit shrinks and
@@ -121,12 +132,17 @@ self-tests so the tiers can't quietly collapse into each other.
 ### The Mango Mania leaderboard
 
 Ranked on **mangoes earned across all rounds of a match**, with **total hits landed** breaking
-ties. Mangoes are the right currency because you only ever get one by reading a parry or stringing
-a combo together — never by luck or by standing in the right place. Both tallies are on the
-desktop HUD during the fight, and each player sees their own count on their phone.
+ties. A mango comes from exactly one thing: **landing a parry**. It used to also drop every third
+hit in a combo, which quietly made mashing A the better strategy than reading your opponent - the
+opposite of the game this is meant to be. The combo counter still runs on the HUD, but it pays
+nothing. Both tallies are on the desktop HUD during the fight, and each player sees their own count
+on their phone.
 
-A run good enough for the top five **prompts for a name** before it is saved, headlined
-`NEW RECORD!` when it beats everything on the board.
+A run good enough for the top five goes onto the board **by itself**, under the name the player
+typed when they entered the room, headlined `NEW RECORD` when it beats everything already there.
+There is no "enter your name" step and no SAVE button: the player already gave their name at the
+door, and asking again in the middle of being cheered is how scores end up never being saved at
+all. Playing again and beating it simply scores again.
 
 **Winner stays on.** The champion holds the ring and their win streak is tracked. After a match you
 get a result screen with **PLAY AGAIN** or **LOBBY**.
@@ -159,10 +175,22 @@ shared/           The game, with no DOM and no sockets - runs in the browser and
   selftests.js    runSelfTests() - the acceptance suite described above.
 client/desktop/   The ring: canvas renderer, sprite-sheet animation state machine, the
                   procedurally drawn dohyo, screen shake / hitstop / dust / sparks, synthesised
-                  SFX + chiptune, the lobby, and the best-of-3 match loop.
-client/phone/     The controller: bottom-anchored joystick + diagonal A/B, the rules/ready card,
-                  the personal HUD, the join/lobby screens. Never renders the fight - immune to
-                  render and network jitter.
+                  SFX + chiptune, the lobby, and the best-of-3 match loop. The fight is staged
+                  in the same layered venue as the lobby - pavilions, bright crowd, rail,
+                  lanterns - with the gyoji officiating at the clay and three fans ringside on
+                  zabuton, and the HUD is a pair of mirrored wooden plaques flanking the clock
+                  with each side's mango haul.
+  dohyo.js        The clay, drawn once and shared by the fight and the lobby so it cannot drift.
+  attract.js      The lobby attract loop - the cabinet's attract screen. The canvas paints the
+                  venue in layers (sky, twin pavilion roofs, bright crowd, rail, floor, clay) with
+                  lanterns flickering on cords, dust motes, and the two wrestlers waiting at full
+                  strength in the foreground, walking in when a phone claims a seat. It publishes
+                  the arena's geometry as CSS variables; the HTML side is all in-world objects -
+                  the hung sign, the nailed-up QR notice, the TOP MANGOES plaque, the wooden
+                  nameplates, and the chunky mango cabinet button sitting in the ring.
+client/phone/     The controller, landscape-first: joystick left, A/B right, the character
+                  select + ready screen, the personal HUD, the join/lobby screens. Never renders
+                  the fight - immune to render and network jitter.
 client/shared/    The shared pixel-arcade CSS skin both clients pull from.
 assets/           Curated sprite sheets and arena art (see assets/README.md for the frame layout
                   and where CONFIG points at each file).
